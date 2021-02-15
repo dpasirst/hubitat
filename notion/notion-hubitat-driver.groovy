@@ -1,5 +1,5 @@
 /**
- *  Notion Driver
+ *  Notion Driver - UNOFFICIAL
  *  Author: David Pasirstein
  *
  *  Copyright (c) 2021 David Pasirstein
@@ -14,6 +14,7 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *
+ *  This is an UNOFFICIAL Driver.
  *  Both this driver and the child driver must be installed.  This parent Notion Driver will
  *  use the Notion Sensor child driver to create the discovered sensor devices and update
  *  data accordingly.
@@ -30,7 +31,7 @@ metadata {
     definition (name: 'Notion Driver (https://getnotion.com/)',
             namespace: 'dpasirst',
             author: 'Dave Pasirstein',
-            importUrl: '') {
+            importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/notion/notion-hubitat-driver.groovy') {
         capability 'Sensor'
 
         attribute 'current_notionpoll', 'string'

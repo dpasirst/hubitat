@@ -1,5 +1,5 @@
 /**
- *  Notion Sensor (child) Driver
+ *  Notion Sensor (child) Driver - UNOFFICIAL
  *  Author: David Pasirstein
  *
  *  Copyright (c) 2021 David Pasirstein
@@ -14,6 +14,7 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *
+ *  This is an UNOFFICIAL Driver.
  *  This is a child driver and not intended to be used directly.  Both this driver and the
  *  parent driver must be installed.  The parent Notion Driver will use this driver to create
  *  the discovered sensor devices and update data accordingly.
@@ -26,7 +27,7 @@ metadata {
     definition (name: 'Notion Sensor (child) Driver',
             namespace: 'dpasirst',
             author: 'Dave Pasirstein',
-            importUrl: '') {
+            importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/notion/notion-sensor-child-driver-hubitat.groovy') {
         capability 'Sensor'
         capability "TemperatureMeasurement"
         capability "PresenceSensor"
