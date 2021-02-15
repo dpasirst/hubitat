@@ -1,0 +1,24 @@
+{
+    "packageName": "Unofficial Notion (getnotion.com)",
+    "minimumHEVersion": "2.2.0",
+    "author": "David Pasirstein",
+    "version": "1.0",
+    "dateReleased": "2021-02-15",
+    "communityLink": "",
+    "drivers": [
+        {
+          "id": "b1076cda-784a-44f7-be68-2d26765e2852",
+          "name": "Notion Driver (https://getnotion.com/)",
+          "namespace": "dpasirst",
+          "location": "https://raw.githubusercontent.com/dpasirst/hubitat/main/notion/notion-hubitat-driver.groovy",
+          "required": true
+        },
+        {
+          "id": "a8adec61-465c-4b1b-9b75-bb4d2c064d48",
+          "name": "Notion Sensor (child) Driver",
+          "namespace": "dpasirst",
+          "location": "https://raw.githubusercontent.com/dpasirst/hubitat/main/notion/notion-sensor-child-driver-hubitat.groovy",
+          "required": true
+        }  
+    ]
+}
