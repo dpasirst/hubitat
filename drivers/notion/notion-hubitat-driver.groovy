@@ -284,7 +284,7 @@ Object pollTasksSync(String accessToken, String sensorid = null) {
             }
         }
     } catch (Exception e) {
-        log.warn "Call to on failed: ${e.message}"
+        log.warn "Call to get tasks failed: ${e.message}"
     }
     return result
 }
