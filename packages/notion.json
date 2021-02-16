@@ -5,6 +5,7 @@
     "version": "1.0",
     "dateReleased": "2021-02-15",
     "communityLink": "",
+    "licenseFile": "https://raw.githubusercontent.com/dpasirst/hubitat/main/LICENSE",
     "drivers": [
         {
           "id": "b1076cda-784a-44f7-be68-2d26765e2852",
