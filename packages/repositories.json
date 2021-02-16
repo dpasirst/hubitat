@@ -1,0 +1,13 @@
+{
+    "author": "David Pasirstein",
+    "gitHubUrl": "https://github.com/dpasirst",
+    "payPalUrl": "https://paypal.me/dpasirst",
+    "packages": [
+      {
+        "name": "Unofficial Notion (getnotion.com)",
+        "category": "Integrations",
+        "location": "https://raw.githubusercontent.com/dpasirst/hubitat/main/packages/notion.json",
+        "description": "Unofficial Notion (getnotion.com) drivers for configurable sensors"
+      }
+    ]
+}
