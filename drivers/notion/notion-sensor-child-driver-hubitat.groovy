@@ -58,7 +58,7 @@ void refresh() {
 }
 
 void installed() {
-    state.comment1 = "To reset this driver, delete it.  It will be recreated on the next poll of the parent driver. " +
+    state.comment1 = "To reset this device, remove it.  It will be recreated on the next poll of the parent driver. " +
             "If you change your notion sensor configuration, you may need to do this to clear stale, no longer " +
             "used sensor data."
     state.comment2 = "Notion to Hubitat Battery Levels: high=100, medium=50, low=15, critical=1, -not reported-=0"
