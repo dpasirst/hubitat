@@ -21,7 +21,7 @@
  *
 */
 
-public static String version()      {  return '0.0.2'  }
+public static String version()      {  return '0.0.4'  }
 
 metadata {
     definition (name: 'Notion Sensor (child) Driver',
@@ -29,6 +29,8 @@ metadata {
             author: 'Dave Pasirstein',
             importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/notion/notion-sensor-child-driver-hubitat.groovy') {
         capability 'Sensor'
+        capability "Initialize"
+        capability "Refresh"
         capability "TemperatureMeasurement"
         capability "PresenceSensor"
         capability "Battery"
@@ -44,10 +46,22 @@ metadata {
         attribute 'firmware_version', 'string'
         attribute 'hardware_revision', 'number'
 
-        command 'refresh'
+        attribute "presence_did_change", "enum", ["true", "false"]
+        attribute "presence_change_last_reported_at", "string"
+        attribute "water_did_change", "enum", ["true", "false"]
+        attribute "water_change_last_reported_at", "string"
+        attribute "temperature_did_change", "enum", ["true", "false"]
+        attribute "temperature_change_last_reported_at", "string"
+        attribute "battery_did_change", "enum", ["true", "false"]
+        attribute "battery_change_last_reported_at", "string"
+        attribute "smoke_did_change", "enum", ["true", "false"]
+        attribute "smoke_change_last_reported_at", "string"
+        attribute "contact_did_change", "enum", ["true", "false"]
+        attribute "contact_change_last_reported_at", "string"
+
     }
 
-    preferences() {
+preferences() {
         input 'tscale', 'enum', title: "Temperature Reporting", description: "Will Change on Next Poll\nunit of measurement", required: true, defaultValue: 'system default', options: ['system default','celsius','fahrenheit']
     }
 }
@@ -57,11 +71,18 @@ void refresh() {
     parent?.refreshSensorAndTasks(device.currentValue("sensor_id"))
 }
 
+void initialize() {
+    installed()
+}
+
 void installed() {
-    state.comment1 = "To reset this device, remove it.  It will be recreated on the next poll of the parent driver. " +
+    state.comment1 = "To reset this driver, delete it.  It will be recreated on the next poll of the parent driver. " +
             "If you change your notion sensor configuration, you may need to do this to clear stale, no longer " +
             "used sensor data."
     state.comment2 = "Notion to Hubitat Battery Levels: high=100, medium=50, low=15, critical=1, -not reported-=0"
+    state.comment3 = "Change events such as \"battery_did_change\" will toggle true/false since the last update/refresh if " +
+            "the task had reported that an update occurred. The state itself may have already return to the original " +
+            "value between polling / refresh but the change event will still indicate it had occurred."
 }
 
 /**
@@ -105,13 +126,14 @@ void updateSensor(Object sensor, Object tasks) {
             continue
         }
         def val = findStateValue(task)
+        def valUpdated = findTaskLastReported(task)
         if (task.task_type == "missing") {
             //first presence
             val = (val == "not_missing") ? "present" : "not present"
-            sendEvent(name: 'presence', value: val)
+            sendTaskUpdate('presence', val, valUpdated)
         } else if (task.task_type == "leak") {
             val = (val == "no_leak") ? "dry" : "wet"
-            sendEvent(name: 'water', value: val)
+            sendTaskUpdate('water', val, valUpdated)
         } else if (task.task_type == "temperature") {
             if (val != null) {
                 val = new BigDecimal(val)
@@ -121,7 +143,7 @@ void updateSensor(Object sensor, Object tasks) {
             } else {
                 val == new BigDecimal(0)
             }
-            sendEvent(name: 'temperature', value: val)
+            sendTaskUpdate('temperature', val, valUpdated)
         } else if (task.task_type == "low_battery") {
             if (val == "high") {
                 val = 100
@@ -134,14 +156,14 @@ void updateSensor(Object sensor, Object tasks) {
             } else {
                 val = 0
             }
-            sendEvent(name: 'battery', value: val)
+            sendTaskUpdate('battery', val, valUpdated)
         } else if (task.task_type == "alarm") {
             if (val == "no_alarm") {
                 val = "clear"
             } else {
                 val = "detected"
             }
-            sendEvent(name: 'smoke', value: val)
+            sendTaskUpdate('smoke', val, valUpdated)
         } else if (task.task_type == "door" ||
                 task.task_type == "sliding" ||
                 task.task_type == "safe" ||
@@ -151,7 +173,7 @@ void updateSensor(Object sensor, Object tasks) {
             if (val != "closed") {
                 val = "open"
             }
-            sendEvent(name: 'contact', value: val)
+            sendTaskUpdate('contact', val, valUpdated)
         } //else {
             //log.warn "${device.label} Does not have support for ${task.task_type} with value: ${val}"
         //}
@@ -161,4 +183,15 @@ void updateSensor(Object sensor, Object tasks) {
 
 def findStateValue(Object task) {
     return (task?.status?.insights?.primary?.to_state) ? task?.status?.insights?.primary?.to_state : task?.status?.value
+}
+
+def findTaskLastReported(Object task) {
+    return (task?.status?.insights?.primary?.data_received_at) ? task?.status?.insights?.primary?.data_received_at : task?.status?.received_at
+}
+
+def sendTaskUpdate(String capability_name, Object val, Object date) {
+    sendEvent(name: capability_name, value: val)
+    sendEvent(name: capability_name + "_did_change",
+            value: (device.currentValue(capability_name + "_change_last_reported_at") == date) ? "false" : true)
+    sendEvent(name: capability_name + "_change_last_reported_at", value: date)
 }

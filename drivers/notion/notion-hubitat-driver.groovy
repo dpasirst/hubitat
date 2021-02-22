@@ -25,7 +25,7 @@
  *  - Go to Devices -> Add Virtual Device - give it a name and select this driver
  *  - Save and configure
  */
-public static String version()      {  return '0.0.2'  }
+public static String version()      {  return '0.0.4'  }
 
 metadata {
     definition (name: 'Notion Driver (https://getnotion.com/)',
@@ -33,12 +33,12 @@ metadata {
             author: 'Dave Pasirstein',
             importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/notion/notion-hubitat-driver.groovy') {
         capability 'Sensor'
+        capability "Polling"
 
         attribute 'current_notionpoll', 'string'
         attribute 'current_notion_lastauth', 'string'
 
         command 'reAuth'
-        command 'pollData'
         command 'resetToken'
     }
 
@@ -72,7 +72,7 @@ void setupDevice(Map map){
     updated();
 }
 
-void pollData(){
+void poll(){
     pollNotion();
 }
 
@@ -284,7 +284,7 @@ Object pollTasksSync(String accessToken, String sensorid = null) {
             }
         }
     } catch (Exception e) {
-        log.warn "Call to get tasks failed: ${e.message}"
+        log.warn "Call to on failed: ${e.message}"
     }
     return result
 }

@@ -2,7 +2,7 @@
     "packageName": "Unofficial Notion (getnotion.com)",
     "minimumHEVersion": "2.2.0",
     "author": "David Pasirstein",
-    "version": "1.0",
+    "version": "1.0.1",
     "dateReleased": "2021-02-15",
     "communityLink": "",
     "licenseFile": "https://raw.githubusercontent.com/dpasirst/hubitat/main/LICENSE",
