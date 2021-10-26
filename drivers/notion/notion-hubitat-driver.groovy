@@ -25,13 +25,13 @@
  *  - Go to Devices -> Add Virtual Device - give it a name and select this driver
  *  - Save and configure
  */
-public static String version()      {  return '0.0.4'  }
+public static String version()      {  return '0.0.5'  }
 
 metadata {
     definition (name: 'Notion Driver (https://getnotion.com/)',
             namespace: 'dpasirst',
             author: 'Dave Pasirstein',
-            importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/notion/notion-hubitat-driver.groovy') {
+            importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/drivers/notion/notion-hubitat-driver.groovy') {
         capability 'Sensor'
         capability "Polling"
 

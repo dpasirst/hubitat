@@ -21,13 +21,13 @@
  *
 */
 
-public static String version()      {  return '0.0.4'  }
+public static String version()      {  return '0.0.5'  }
 
 metadata {
     definition (name: 'Notion Sensor (child) Driver',
             namespace: 'dpasirst',
             author: 'Dave Pasirstein',
-            importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/notion/notion-sensor-child-driver-hubitat.groovy') {
+            importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/drivers/notion/notion-sensor-child-driver-hubitat.groovy') {
         capability 'Sensor'
         capability "Initialize"
         capability "Refresh"
