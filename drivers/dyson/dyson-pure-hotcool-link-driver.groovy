@@ -42,7 +42,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.0.1'  }
+public static String version()      {  return '0.0.2'  }
 
 def static fanModeMap() {["Off":"OFF","Fan":"FAN","Auto":"AUTO"]}
 def static fanSpeedMap() {["1":"0001","2":"0002","3":"0003","4":"0004","5":"0005","6":"0006",
@@ -60,6 +60,7 @@ metadata {
             namespace: 'dpasirst',
             author: 'Dave Pasirstein',
             importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/dyson/dyson-pure-hotcool-link-driver.groovy') {
+        capability "Actuator"
         capability 'Sensor'
         capability "Polling"
         capability "AirQuality"
