@@ -59,7 +59,7 @@ metadata {
     definition (name: 'Dyson Pure Hot Cool Link Driver (e.g., HP02)',
             namespace: 'dpasirst',
             author: 'Dave Pasirstein',
-            importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/dyson/dyson-pure-hotcool-link-driver.groovy') {
+            importUrl: 'https://raw.githubusercontent.com/dpasirst/hubitat/main/drivers/dyson/dyson-pure-hotcool-link-driver.groovy') {
         capability "Actuator"
         capability 'Sensor'
         capability "Polling"
