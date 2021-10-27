@@ -42,7 +42,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.0.2'  }
+public static String version()      {  return '0.0.5'  }
 
 def static fanModeMap() {["Off":"OFF","Fan":"FAN","Auto":"AUTO"]}
 def static fanSpeedMap() {["1":"0001","2":"0002","3":"0003","4":"0004","5":"0005","6":"0006",
@@ -55,6 +55,7 @@ def static focusModeMap() {["On":"ON","Off":"OFF"]}
 def static heatModeMap() {["Off":"OFF","Heat":"HEAT"]}
 def static resetFilterMap() {["Do Nothing":"STET","Reset":"RSTF"]}
 
+
 metadata {
     definition (name: 'Dyson Pure Hot Cool Link Driver (e.g., HP02)',
             namespace: 'dpasirst',
@@ -64,13 +65,17 @@ metadata {
         capability 'Sensor'
         capability "Polling"
         capability "AirQuality"
+        capability "FanControl"
         capability "FilterStatus"
+        capability "RelativeHumidityMeasurement"
+        capability "SignalStrength" //attrib rssi - NUMBER
+        capability "TemperatureMeasurement"
+        capability "Thermostat"
+        capability "ThermostatFanMode"
         capability "ThermostatHeatingSetpoint"
+        capability "ThermostatMode"
 
 
-
-        attribute 'current_dysonpoll', 'string'
-        //attribute 'current_dyson_lastauth', 'string'
         attribute 'dyson_dyson_mqtt_rcv', 'string'
         attribute 'fanMode', 'enum', fanModeMap().values().toList() //fmod
         attribute 'oscillation', 'enum', oscillationMap().values().toList() //oson
@@ -93,10 +98,8 @@ metadata {
         attribute 'filterLifeHrs','number' //filf (note number)
 
         //enviornmental
-        attribute 'temperature', 'string'  //friendly? tact in kelvin --env (OFF,INIT,FAIL,value)
-        attribute 'temperatureFriendly', 'number'  //friendly number
+        attribute 'temperatureKelvin', 'string'  //friendly? tact in kelvin --env (OFF,INIT,FAIL,value)
         attribute 'humidityPercentage', 'string' //hact  --env (OFF,INIT,FAIL,value)
-        attribute 'humidityPercentageFriendly', 'number' //hact number
         attribute 'particulateMatter', 'string' //pact  --env (OFF,INIT,FAIL,value)
         attribute 'volatileOrganicCompounds', 'string' //vact  --env (OFF,INIT,FAIL,value)
         attribute 'sleepTimer', 'string' //sltm  OFF or 0 < duration <= 540 formatted as "0000"
@@ -148,7 +151,12 @@ def isSupportedHotCoolDevice(String device_type) {
     return [DEVICE_TYPE_PURE_HOT_COOL_LINK()].contains(device_type)
 }
 
+def installed() {
+    initialize()
+}
+
 void updated(){
+    initialize()
     switch (pollInterval) {
         case '1 Minute'     : runEvery1Minute(runPoll);   break;
         case '5 Minutes'    : runEvery5Minutes(runPoll);  break;
@@ -160,15 +168,18 @@ void updated(){
         default             : unschedule(runPoll);        break;
     }
 }
+
+void uninstalled() {
+    disconnectFromUnit()
+}
+
+def initialize() {
+    //tbd
+}
+
 def poll(){
     runPoll()
 }
-
-/*
-def refreshDeviceList() {
-    loginDysonOnline()
-}
-*/
 
 void runPoll() {
     if (!interfaces.mqtt.isConnected()) {
@@ -239,11 +250,24 @@ private static DYSON_PARAM_HOT_COOL_STATE_MAP()  {
 private static DYSON_PARAM_ENVIRONMENTAL_MAP()  {
     [
             //environmental are contained in a "data" sub object in json
-            'temperature': "tact", //fan
+            'temperatureKelvin': "tact", //fan
             'humidityPercentage':"hact", //fan
             'particulateMatter':"pact", //fan
             'volatileOrganicCompounds': "vact", //fan
             'sleepTimer': "sltm" //fan
+    ]
+}
+
+private static FanControlSpeedMapping() {
+    [
+            "low": "1",
+            "medium-low": "3",
+            "medium": "5",
+            "medium-high": "8",
+            "high":"10",
+            "on": "Fan",
+            "off": "Off",
+            "auto" : "Auto",
     ]
 }
 
@@ -268,8 +292,8 @@ void connectToUnit() {
     if (!interfaces.mqtt.isConnected()) {
         def serial = ""
         def device_type = ""
-        def hashedPass = hashDevicePassword(UNIT_PASSWD())
-        (serial,device_type) = decodeSSID(UNIT_SSID())
+        def hashedPass = hashDevicePassword(UNIT_PASSWD() as String)
+        (serial,device_type) = decodeSSID(UNIT_SSID() as String)
         if (!isSupported()) {
             log.error("DYSON unsupported device, will not attempt to connect")
             return
@@ -290,7 +314,7 @@ void disconnectFromUnit() {
     if (interfaces.mqtt.isConnected()) {
         def serial = ""
         def device_type = ""
-        (serial,device_type) = decodeSSID(UNIT_SSID())
+        (serial,device_type) = decodeSSID(UNIT_SSID() as String)
         log.info("DYSON MQTT Disconnect initiated")
         log.debug("DYSON Initiating UnSubscribe: ${DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial)}")
         interfaces.mqtt.unsubscribe(DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial))
@@ -315,10 +339,10 @@ def hashDevicePassword(String devicePassword) {
  * @return boolean true if this driver supports the device, otherwise false
  */
 def isSupported() {
-    if (isSupportedCoolDevice(state.device_type)) {
+    if (isSupportedCoolDevice(state.device_type as String)) {
         log.info("Dyson device is supported Cool")
         state.canHeat = 0
-    } else if (isSupportedHotCoolDevice(state.device_type)) {
+    } else if (isSupportedHotCoolDevice(state.device_type as String)) {
         log.info("Dyson device is supported Hot+Cool")
         state.canHeat = 1
     } else {
@@ -379,6 +403,8 @@ def processMessage(Map dysonJSON) {
     sendEvent(name: 'dyson_dyson_mqtt_rcv', value: mqttDate())
     if (dysonJSON.msg == DYSON_MQTT_MSG_CURRENT_STATE()) {
         log.debug("Dyson Received a current state message")
+        def rssi = dysonJSON.getOrDefault("rssi","-127") //-127 is not connected
+        sendEvent(name: "rssi", value: rssi.toString().toInteger())
         def productState = dysonJSON.getOrDefault("product-state",null) as Map
         if (productState != null) {
             DYSON_PARAM_COOL_STATE_MAP().each { key, attName ->
@@ -390,7 +416,7 @@ def processMessage(Map dysonJSON) {
                     }
                     sendEvent(name: key, value: val)
                 }
-            }
+            }a
             if (state.canHeat) {
                 DYSON_PARAM_HOT_COOL_STATE_MAP().each { key, attName ->
                     def val = productState.getOrDefault(attName, null)
@@ -414,15 +440,19 @@ def processMessage(Map dysonJSON) {
             DYSON_PARAM_ENVIRONMENTAL_MAP().each { key, attName ->
                 def val = data.getOrDefault(attName, null)
                 if (val != null) {
-                    if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().temperature) {
+                    if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().temperatureKelvin) {
                         def nval = KelvinToCelsius(val)
                         if (getTemperatureScale() == "F") {
                             nval = celsiusToFahrenheit(nval)
                         }
-                        sendEvent(name: "${key}Friendly", value: nval)
+                        //capability "TemperatureMeasurement"
+                        //temperature - NUMBER, unit:°F || °C
+                        sendEvent(name: "temperature", value: nval)
                     } else if ([DYSON_PARAM_ENVIRONMENTAL_MAP().humidityPercentage].contains(attName)) {
                         def nval = val.toString().toInteger()
-                        sendEvent(name: "${key}Friendly", value: nval)
+                        //capability "RelativeHumidityMeasurement"
+                        //attrib humidity NUMBER, unit:%rh
+                        sendEvent(name: "humidity", value: nval)
                     }
                     if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().particulateMatter) {
                         def particulates = val.toString().toInteger()
@@ -534,7 +564,7 @@ def setConfiguration(Map configParams) {
                                                      "time":mqttDate(),
                                                      "mode-reason": "LAPP",
                                                      "data":configParams])
-        log.debug("DYSON Sending:${message}")
+        //log.debug("DYSON Sending:${message}")
         interfaces.mqtt.publish(DYSON_MQTT_PUBLISH_TOPIC((String)state.device_type, (String)state.device_serial),
                                 message)
     }
@@ -636,8 +666,65 @@ static def KelvinToCelsius(temperature) {
 }
 
 ////////////////////////////////////////
+// <<<<<<<  FanControl Commands >>>>>>>
+////////////////////////////////////////
+def setSpeed(fanspeed) {
+    def newVal = FanControlSpeedMapping().getOrDefault(fanspeed,FanControlSpeedMapping().off)
+    log.debug("DYSON FanControl setSpeed:${fanspeed} (mapped:${newVal})")
+    if ([FanControlSpeedMapping().off,FanControlSpeedMapping().on,FanControlSpeedMapping().auto].contains(newVal)) {
+        setFanMode(newVal)
+    } else {
+        if (device.currentValue("fanMode") == "OFF") {
+            setFanMode(FanControlSpeedMapping().on)
+        }
+        setFanSpeed(newVal)
+    }
+}
+
+def cycleSpeed() {
+    def curSpeedStr = device.currentValue("fanSpeed")
+    if (curSpeedStr == null) { curSpeedStr = "0" }
+    def curSpeed = curSpeedStr.toString().toInteger()
+    curSpeed = curSpeed + 1
+    //speed can only be 1..10
+    if (curSpeed > 10) { curSpeed = 1 }
+    log.debug("DYSON FanControl cycleSpeed was: ${curSpeedStr} to: ${curSpeed}")
+    setFanSpeed(curSpeed.toString())
+}
+
+////////////////////////////////////////
 // <<<<<<<  Thermostat Commands >>>>>>>
 ////////////////////////////////////////
+def auto() {
+    fanAuto()
+}
+def cool() {
+    fanOn()
+}
+def emergencyHeat() {
+    heat()
+}
+def fanAuto() {
+    setFanMode(FanControlSpeedMapping().auto)
+}
+def fanCirculate() {
+    setOscillationMode("On")
+}
+def fanOn() {
+    if (device.currentValue("heatMode") == heatModeMap().Heat) {
+        setHeatMode(heatModeMap().Off)
+    }
+    setFanMode(FanControlSpeedMapping().on)
+}
+def heat() {
+    setHeatMode("Heat")
+}
+def off() {
+    setFanMode(FanControlSpeedMapping().off)
+}
+def setCoolingSetpoint(temperature) {
+    log.error("DYSON Cooling Setpoint is not supported")
+}
 /**
  * Hubitat capability "ThermostatHeatingSetpoint" has setHeatingSetpoint(temperature)
  * with corresponding command button
@@ -657,6 +744,32 @@ def setHeatingSetpoint(temperature) {
         setConfiguration(config)
     } else {
         log.info("DYSON Heat Target is not possible with this device")
+    }
+}
+
+def setThermostatFanMode(fanmode) {
+    //ENUM ["on", "circulate", "auto"]
+    if (fanmode.toString() == "on") {
+        fanOn()
+    } else if (fanmode.toString() == "circulate") {
+        fanCirculate()
+    } else if (fanmode.toString() == "auto") {
+        fanAuto()
+    }
+}
+
+def setThermostatMode(thermostatmode) {
+    //ENUM ["auto", "off", "heat", "emergency heat", "cool"]
+    if (thermostatmode.toString() == "auto") {
+        fanAuto()
+    } else if (thermostatmode.toString() == "heat") {
+        heat()
+    } else if (thermostatmode.toString() == "emergency heat") {
+        emergencyHeat()
+    } else if (thermostatmode.toString() == "cool") {
+        cool()
+    } else {
+        off()
     }
 }
 
@@ -703,6 +816,10 @@ Instead it seems to be using a ICA DigiCert TLS RSA SHA256 2020 CA1
 Thus, we either need to pin this cert for the trust chain or disable validation.
 
 private DYSON_API_SERVER()  { "api.cp.dyson.com" }
+
+def refreshDeviceList() {
+    loginDysonOnline()
+}
 
 void loginDysonOnline() {
     if( email== null || password== null || countryCode == null ) {
