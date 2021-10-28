@@ -37,12 +37,12 @@
  *   https://github.com/shenxn/libdyson for ideas and know how
  *
  */
-
+ 
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.0.5'  }
+public static String version()      {  return '0.1.0'  }
 
 def static fanModeMap() {["Off":"OFF","Fan":"FAN","Auto":"AUTO"]}
 def static fanSpeedMap() {["1":"0001","2":"0002","3":"0003","4":"0004","5":"0005","6":"0006",
@@ -157,6 +157,11 @@ def installed() {
 
 void updated(){
     initialize()
+    disconnectFromUnit()
+    connectToUnit()
+    if (interfaces.mqtt.isConnected()) {
+        requestStateUpdate()
+    }
     switch (pollInterval) {
         case '1 Minute'     : runEvery1Minute(runPoll);   break;
         case '5 Minutes'    : runEvery5Minutes(runPoll);  break;
@@ -173,6 +178,9 @@ void uninstalled() {
     disconnectFromUnit()
 }
 
+/**
+ * called by installed & updated
+ */
 def initialize() {
     //tbd
 }
@@ -225,49 +233,49 @@ private DEVICE_TYPE_NAMES()  {[
 
 private static DYSON_PARAM_COOL_STATE_MAP()  {
     [
-            'fanMode': "fmod", //fan
-            'oscillation': "oson", //fan
-            'nightMode': "nmod", //fan
-            'fanSpeed': "fnsp", //fan
-            'fanState': "fnst", //fan
-            'qualityTarget': "qtar", //fan
-            'standbyMonitoring': "rhtm", //fan
+        'fanMode': "fmod", //fan
+        'oscillation': "oson", //fan
+        'nightMode': "nmod", //fan
+        'fanSpeed': "fnsp", //fan
+        'fanState': "fnst", //fan
+        'qualityTarget': "qtar", //fan
+        'standbyMonitoring': "rhtm", //fan
 
-            'errorCode' : "ercd", //all?
-            'warningCode' : "wacd", //all?
-            'filterLifeHrs':"filf", //fan
+        'errorCode' : "ercd", //all?
+        'warningCode' : "wacd", //all?
+        'filterLifeHrs':"filf", //fan
     ]
 }
 private static DYSON_PARAM_HOT_COOL_STATE_MAP()  {
     [
-            'focusMode':"ffoc", //heat
-            'tiltState':"tilt", //heat
-            'heatMode':"hmod", //heat
-            'heatState':"hsta", //heat
-            'heatTempTarget':"hmax", //heat
+        'focusMode':"ffoc", //heat
+        'tiltState':"tilt", //heat
+        'heatMode':"hmod", //heat
+        'heatState':"hsta", //heat
+        'heatTempTarget':"hmax", //heat
     ]
 }
 private static DYSON_PARAM_ENVIRONMENTAL_MAP()  {
     [
-            //environmental are contained in a "data" sub object in json
-            'temperatureKelvin': "tact", //fan
-            'humidityPercentage':"hact", //fan
-            'particulateMatter':"pact", //fan
-            'volatileOrganicCompounds': "vact", //fan
-            'sleepTimer': "sltm" //fan
+        //environmental are contained in a "data" sub object in json
+        'temperatureKelvin': "tact", //fan
+        'humidityPercentage':"hact", //fan
+        'particulateMatter':"pact", //fan
+        'volatileOrganicCompounds': "vact", //fan
+        'sleepTimer': "sltm" //fan
     ]
 }
 
 private static FanControlSpeedMapping() {
     [
-            "low": "1",
-            "medium-low": "3",
-            "medium": "5",
-            "medium-high": "8",
-            "high":"10",
-            "on": "Fan",
-            "off": "Off",
-            "auto" : "Auto",
+        "low": "1",
+        "medium-low": "3",
+        "medium": "5",
+        "medium-high": "8",
+        "high":"10",
+        "on": "Fan",
+        "off": "Off",
+        "auto" : "Auto",
     ]
 }
 
@@ -289,17 +297,25 @@ private DYSON_MQTT_MSG_SND_GET_CURRENT() {"REQUEST-CURRENT-STATE"}
  * method to connect and subscribe on the device
  */
 void connectToUnit() {
+    if (UNIT_PASSWD() == null || UNIT_PASSWD() == null) { return }
     if (!interfaces.mqtt.isConnected()) {
         def serial = ""
         def device_type = ""
         def hashedPass = hashDevicePassword(UNIT_PASSWD() as String)
         (serial,device_type) = decodeSSID(UNIT_SSID() as String)
+        if (serial == null || serial == "" || device_type == null || device_type == "") {
+            log.error("DYSON could not decode the provided WiFi SSID")
+            return
+        }
         if (!isSupported()) {
             log.error("DYSON unsupported device, will not attempt to connect")
             return
         }
-        log.debug("DYSON:init mqtt to: tcp://${UNIT_ADDRESS()}:1883")
-        interfaces.mqtt.connect("tcp://${UNIT_ADDRESS()}:1883",device.deviceNetworkId,serial,hashedPass)
+        if (state.clientId == null) {
+            state.clientId = UUID.randomUUID().toString()
+        }
+        log.debug("DYSON:init mqtt to: tcp://${UNIT_ADDRESS()}:1883 as client: ${state.clientId}")
+        interfaces.mqtt.connect("tcp://${UNIT_ADDRESS()}:1883",state.clientId as String,serial,hashedPass)
         log.debug("DYSON reporting isConnected=${interfaces.mqtt.isConnected()}")
         if (interfaces.mqtt.isConnected()) {
             log.debug("DYSON Initiating Subscription: ${DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial)}")
@@ -319,7 +335,9 @@ void disconnectFromUnit() {
         log.debug("DYSON Initiating UnSubscribe: ${DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial)}")
         interfaces.mqtt.unsubscribe(DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial))
         try { interfaces.mqtt.disconnect() } catch (e) {}
-        log.debug("Disconnected")
+        log.debug("DYSON Disconnected")
+    } else {
+        log.debug("DYSON Disconnect From Unit Command: Already Disconnected")
     }
 }
 
@@ -361,6 +379,7 @@ def decodeSSID(String ssid) {
     try {
         def serial = ""
         def device_type = ""
+        def match
         if ((match = ssid =~ /^DYSON-([0-9A-Z]{3}-[A-Z]{2}-[0-9A-Z]{8})-([0-9]{3}[A-Z]?)$/ )) {
             serial = match.group(1)
             device_type = DEVICE_TYPE_MAP().getOrDefault((String)match.group(2),(String)match.group(2))
@@ -386,9 +405,9 @@ def decodeSSID(String ssid) {
  */
 def parse(String message) {
     //log.debug("Received Dyson message: $message")
-    def mqttmessage = interfaces.mqtt.parseMessage(message)
-    //log.debug("Dyson MQTT Message has ${mqttmessage.size()} elements: $mqttmessage")
-    def payload = (new JsonSlurper().parseText((String)mqttmessage.get("payload"))) as Map
+    def mqttMessage = interfaces.mqtt.parseMessage(message)
+    //log.debug("Dyson MQTT Message has ${mqttMessage.size()} elements: mqttMessage")
+    def payload = (new JsonSlurper().parseText(mqttMessage.get("payload") as String)) as Map
     processMessage(payload)
 }
 
@@ -402,99 +421,99 @@ def processMessage(Map dysonJSON) {
     if (dysonJSON?.msg == null) { return }
     sendEvent(name: 'dyson_dyson_mqtt_rcv', value: mqttDate())
     if (dysonJSON.msg == DYSON_MQTT_MSG_CURRENT_STATE()) {
-        log.debug("Dyson Received a current state message")
-        def rssi = dysonJSON.getOrDefault("rssi","-127") //-127 is not connected
-        sendEvent(name: "rssi", value: rssi.toString().toInteger())
+        log.debug("DYSON Received a current state message")
+        def rssi = dysonJSON.getOrDefault("rssi","1").toString().toInteger()
+        if (rssi < 0) { sendEvent(name: "rssi", value: rssi) }
         def productState = dysonJSON.getOrDefault("product-state",null) as Map
-        if (productState != null) {
-            DYSON_PARAM_COOL_STATE_MAP().each { key, attName ->
-                def val = productState.getOrDefault(attName,null)
-                if (val != null) {
-                    if (attName == DYSON_PARAM_COOL_STATE_MAP().filterLifeHrs) {
-                        sendEvent(name: "filterStatus",
-                                  value: ((val as String).toInteger() > 0 ) ? "normal" : "replace")
-                    }
-                    sendEvent(name: key, value: val)
-                }
-            }a
-            if (state.canHeat) {
-                DYSON_PARAM_HOT_COOL_STATE_MAP().each { key, attName ->
-                    def val = productState.getOrDefault(attName, null)
-                    if (val != null) {
-                        if (attName == DYSON_PARAM_HOT_COOL_STATE_MAP().heatTempTarget) {
-                            def nval = KelvinToCelsius(val)
-                            if (getTemperatureScale() == "F") {
-                                nval = celsiusToFahrenheit(nval)
-                            }
-                            sendEvent(name: "${key}Friendly", value: nval)
-                        }
-                        sendEvent(name: key, value: val)
-                    }
-                }
-            }
-        }
+        processMessageState(productState,false)
     } else if(dysonJSON.msg == DYSON_MQTT_MSG_ENVIRONMENTAL_CURRENT()) {
-        log.debug("Dyson Received an environmental message")
+        log.debug("DYSON Received an environmental message")
         def data = dysonJSON.getOrDefault("data",null) as Map
-        if (data != null) {
-            DYSON_PARAM_ENVIRONMENTAL_MAP().each { key, attName ->
-                def val = data.getOrDefault(attName, null)
-                if (val != null) {
-                    if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().temperatureKelvin) {
-                        def nval = KelvinToCelsius(val)
-                        if (getTemperatureScale() == "F") {
-                            nval = celsiusToFahrenheit(nval)
-                        }
-                        //capability "TemperatureMeasurement"
-                        //temperature - NUMBER, unit:°F || °C
-                        sendEvent(name: "temperature", value: nval)
-                    } else if ([DYSON_PARAM_ENVIRONMENTAL_MAP().humidityPercentage].contains(attName)) {
-                        def nval = val.toString().toInteger()
-                        //capability "RelativeHumidityMeasurement"
-                        //attrib humidity NUMBER, unit:%rh
-                        sendEvent(name: "humidity", value: nval)
-                    }
-                    if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().particulateMatter) {
-                        def particulates = val.toString().toInteger()
-                        if (particulates > 500) { particulates = 500 }
-                        sendEvent(name: "airQualityIndex", value: particulates)
-                    }
-                    sendEvent(name: key, value: val)
-                }
-            }
-        }
+        processMessageEnvironmental(data)
     } else if (dysonJSON.msg == DYSON_MQTT_MSG_STATE_CHANGE()) {
-        log.debug("Dyson Received a state changed message")
+        log.debug("DYSON Received a state changed message")
         def productState = dysonJSON.getOrDefault("product-state",null) as Map
-        if (productState != null) {
-            DYSON_PARAM_COOL_STATE_MAP().each { key, attName ->
-                def val = (productState.getOrDefault(attName,null) as ArrayList)?.last()
-                if (val != null) {
-                    if (attName == DYSON_PARAM_COOL_STATE_MAP().filterLifeHrs) {
-                        sendEvent(name: "filterStatus",
-                                value: ((val as String).toInteger() > 0 ) ? "normal" : "replace")
-                    }
-                    sendEvent(name: key, value: val)
-                }
+        processMessageState(productState,true)
+    } else {
+        log.debug("DYSON Received a msg type that we don't handle: ${dysonJSON.msg} -- ${dysonJSON}")
+    }
+}
+
+/**
+ * this is parse current state and update state messages
+ * @param productState Map of values coming from the Dyson MQTT message
+ * @param isUpdate false for current state, true if an update
+ * @return void
+ */
+def processMessageState(Map productState, boolean isUpdate) {
+    if (productState == null) { return }
+    String val = null
+    DYSON_PARAM_COOL_STATE_MAP().each { key, attName ->
+        if (isUpdate) {
+            val = (productState.getOrDefault(attName,null) as ArrayList)?.last()
+        } else {
+            val = productState.getOrDefault(attName,null)
+        }
+        if (val != null) {
+            if (attName == DYSON_PARAM_COOL_STATE_MAP().filterLifeHrs) {
+                sendEvent(name: "filterStatus",
+                        value: ((val as String).toInteger() > 0 ) ? "normal" : "replace")
             }
-            if (state.canHeat) {
-                DYSON_PARAM_HOT_COOL_STATE_MAP().each { key, attName ->
-                    def val = (productState.getOrDefault(attName,null) as ArrayList)?.last()
-                    if (val != null) {
-                        if (attName == DYSON_PARAM_HOT_COOL_STATE_MAP().heatTempTarget) {
-                            def nval = KelvinToCelsius(val)
-                            if (getTemperatureScale() == "F") {
-                                nval = celsiusToFahrenheit(nval)
-                            }
-                            sendEvent(name: "${key}Friendly", value: nval)
-                        }
-                        sendEvent(name: key, value: val)
+            sendEvent(name: key, value: val)
+        }
+    }
+    if (state.canHeat) {
+        DYSON_PARAM_HOT_COOL_STATE_MAP().each { key, attName ->
+            if (isUpdate) {
+                val = (productState.getOrDefault(attName,null) as ArrayList)?.last()
+            } else {
+                val = productState.getOrDefault(attName,null)
+            }
+            if (val != null) {
+                if (attName == DYSON_PARAM_HOT_COOL_STATE_MAP().heatTempTarget) {
+                    def nval = kelvinToCelsius(val)
+                    if (getTemperatureScale() == "F") {
+                        nval = celsiusToFahrenheit(nval as BigDecimal)
                     }
+                    sendEvent(name: "heatingSetpoint", value: nval)
                 }
+                sendEvent(name: key, value: val)
             }
         }
-    } else {
-        log.debug("Dyson Received a msg type that we don't handle: ${dysonJSON.msg} -- ${dysonJSON}")
+    }
+}
+
+/**
+ * this is parse current state and update state messages
+ * @param data Map of values coming from the Dyson MQTT message
+ * @return void
+ */
+def processMessageEnvironmental(Map data) {
+    if (data == null) { return }
+    DYSON_PARAM_ENVIRONMENTAL_MAP().each { key, attName ->
+        def val = data.getOrDefault(attName, null)
+        if (val != null) {
+            if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().temperatureKelvin) {
+                def nval = kelvinToCelsius(val)
+                if (getTemperatureScale() == "F") {
+                    nval = celsiusToFahrenheit(nval as BigDecimal)
+                }
+                //capability "TemperatureMeasurement"
+                //temperature - NUMBER, unit:°F || °C
+                sendEvent(name: "temperature", value: nval)
+            } else if ([DYSON_PARAM_ENVIRONMENTAL_MAP().humidityPercentage].contains(attName)) {
+                def nval = val.toString().toInteger()
+                //capability "RelativeHumidityMeasurement"
+                //attrib humidity NUMBER, unit:%rh
+                sendEvent(name: "humidity", value: nval)
+            }
+            if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().particulateMatter) {
+                def particulates = val.toString().toInteger()
+                if (particulates > 500) { particulates = 500 }
+                sendEvent(name: "airQualityIndex", value: particulates)
+            }
+            sendEvent(name: key, value: val)
+        }
     }
 }
 
@@ -507,14 +526,14 @@ def mqttClientStatus(String message) {
     if (message.startsWith("Error")) {
         log.error("DYSON MQTT: ${message}")
         if (!interfaces.mqtt.isConnected()) {
-            log.debug("Dyson Uh...looks like we lost our MQTT connection")
+            log.debug("DYSON Uh...looks like we lost our MQTT connection")
         }
     } else if (message.startsWith("Status")) {
         log.info("DYSON MQTT: ${message}")
     } else {
-        log.error("Dyson Unexpected status message: ${message}")
+        log.error("DYSON Unexpected status message: ${message}")
         if (!interfaces.mqtt.isConnected()) {
-            log.debug("Dyson Uh...looks like we lost our MQTT connection")
+            log.debug("DYSON Uh...looks like we lost our MQTT connection")
         }
     }
 }
@@ -533,8 +552,31 @@ def requestStateUpdate() {
     if (interfaces.mqtt.isConnected()) {
         pollState()
     } else {
-        log.error("Manual request for state update is not possible because MQTT is not connected")
+        log.error("DYSON Manual request for state update is not possible because MQTT is not connected")
     }
+}
+
+/**
+ * This will use interfaces.mqtt.publish to publish the event. If not currently connected,
+ * it will attempt to first connect the MQTT interface
+ * @param destinationTopic the interfaces.mqtt.publish topic
+ * @param payload the interfaces.mqtt.publish payload
+ * @return true if it believes the message was sent (note an error is still possible
+ *          if so, mqttClientStatus(String message) would receive the Error),
+ *          otherwise false if it was not sent because it could not connect to the device
+ */
+def mqttConnectAndPublish(String destinationTopic,String payload) {
+    def retval = false
+    if (!interfaces.mqtt.isConnected()) {
+        connectToUnit()
+    }
+    if (interfaces.mqtt.isConnected()) {
+        interfaces.mqtt.publish(destinationTopic,payload)
+        retval = true
+    } else {
+        log.error("DYSON event cannot be published because device is not connected")
+    }
+    return retval
 }
 
 /**
@@ -543,14 +585,12 @@ def requestStateUpdate() {
  * @return nothing
  */
 def pollState() {
-    if (interfaces.mqtt.isConnected()) {
-        def stateMsg = ["msg": DYSON_MQTT_MSG_SND_GET_CURRENT(),"time":mqttDate()]
-        interfaces.mqtt.publish(DYSON_MQTT_PUBLISH_TOPIC((String)state.device_type, (String)state.device_serial),
-                    JsonOutput.toJson(stateMsg))
-        def envMsg = ["msg": DYSON_MQTT_MSG_SND_GET_ENVIRONMENTAL(),"time":mqttDate()]
-        interfaces.mqtt.publish(DYSON_MQTT_PUBLISH_TOPIC((String)state.device_type, (String)state.device_serial),
-                JsonOutput.toJson(envMsg))
-    }
+    def stateMsg = ["msg": DYSON_MQTT_MSG_SND_GET_CURRENT(),"time":mqttDate()]
+    mqttConnectAndPublish(DYSON_MQTT_PUBLISH_TOPIC((String)state.device_type, (String)state.device_serial),
+                JsonOutput.toJson(stateMsg))
+    def envMsg = ["msg": DYSON_MQTT_MSG_SND_GET_ENVIRONMENTAL(),"time":mqttDate()]
+    mqttConnectAndPublish(DYSON_MQTT_PUBLISH_TOPIC((String)state.device_type, (String)state.device_serial),
+            JsonOutput.toJson(envMsg))
 }
 
 /**
@@ -559,13 +599,13 @@ def pollState() {
  * @return nothing
  */
 def setConfiguration(Map configParams) {
-    if (configParams != null && interfaces.mqtt.isConnected()) {
+    if (configParams != null) {
         def message = JsonOutput.toJson(["msg":DYSON_MQTT_MSG_STATE_SET(),
                                                      "time":mqttDate(),
                                                      "mode-reason": "LAPP",
                                                      "data":configParams])
         //log.debug("DYSON Sending:${message}")
-        interfaces.mqtt.publish(DYSON_MQTT_PUBLISH_TOPIC((String)state.device_type, (String)state.device_serial),
+        mqttConnectAndPublish(DYSON_MQTT_PUBLISH_TOPIC((String)state.device_type, (String)state.device_serial),
                                 message)
     }
 }
@@ -639,7 +679,7 @@ def resetFilter(mode) {
  * @param temperature temperature in celsius between 1 to 37 inclusive.
  * @return temperature in kelvin
  */
-String HeatTargetFromCelsius(BigDecimal temperature) {
+String heatTargetFromCelsius(BigDecimal temperature) {
     if (temperature < 1 || temperature > 37) {
         //we could error hear, but we will target approx room temp
         temperature = 21.5
@@ -652,8 +692,8 @@ String HeatTargetFromCelsius(BigDecimal temperature) {
  * @param temperature temperature in fahrenheit between 34 to 98 inclusive.
  * @return temperature in kelvin
  */
-String HeatTargetFromFahrenheit(BigDecimal temperature) {
-    return HeatTargetFromCelsius( fahrenheitToCelsius(temperature) )
+String heatTargetFromFahrenheit(BigDecimal temperature) {
+    return heatTargetFromCelsius(fahrenheitToCelsius(temperature))
 }
 
 /**
@@ -661,13 +701,19 @@ String HeatTargetFromFahrenheit(BigDecimal temperature) {
  * @param temperature string that will be converted to an Integer
  * @return number decimal value in celsius
  */
-static def KelvinToCelsius(temperature) {
+static def kelvinToCelsius(temperature) {
     return (temperature.toInteger()/10) - 273
 }
 
 ////////////////////////////////////////
 // <<<<<<<  FanControl Commands >>>>>>>
 ////////////////////////////////////////
+/**
+ * Hubitat capability "FanControl" has setSpeed(fanspeed)
+ * with corresponding command button
+ * @param fanspeed String enum ["low","medium-low","medium","medium-high","high","on","off","auto"]
+ * @return void
+ */
 def setSpeed(fanspeed) {
     def newVal = FanControlSpeedMapping().getOrDefault(fanspeed,FanControlSpeedMapping().off)
     log.debug("DYSON FanControl setSpeed:${fanspeed} (mapped:${newVal})")
@@ -680,7 +726,11 @@ def setSpeed(fanspeed) {
         setFanSpeed(newVal)
     }
 }
-
+/**
+ * Hubitat capability "FanControl" has cycleSpeed() with corresponding command button
+ * this will increment the speed 1..10 and after 10 return to 1
+ * @return void
+ */
 def cycleSpeed() {
     def curSpeedStr = device.currentValue("fanSpeed")
     if (curSpeedStr == null) { curSpeedStr = "0" }
@@ -695,38 +745,79 @@ def cycleSpeed() {
 ////////////////////////////////////////
 // <<<<<<<  Thermostat Commands >>>>>>>
 ////////////////////////////////////////
+/**
+ * Hubitat capability "Thermostat" has auto() with corresponding command button
+ * this just turns on fanAuto()
+ */
 def auto() {
     fanAuto()
 }
+/**
+ * Hubitat capability "Thermostat" has cool() with corresponding command button
+ * the unit doesn't actively cool, so this turns on the fan
+ */
 def cool() {
     fanOn()
 }
+/**
+ * Hubitat capability "Thermostat" has emergencyHeat() with corresponding command button
+ * this will just turn on the heat()
+ */
 def emergencyHeat() {
     heat()
 }
+/**
+ * Hubitat capability "Thermostat" has fanAuto() with corresponding command button
+ * sets the fan mode to auto, this will not enable heat
+ */
 def fanAuto() {
     setFanMode(FanControlSpeedMapping().auto)
 }
+/**
+ * Hubitat capability "Thermostat" has fanCirculate() with corresponding command button
+ * this will enable Oscillation Mode
+ */
 def fanCirculate() {
     setOscillationMode("On")
 }
+/**
+ * Hubitat capability "Thermostat" has fanOn() with corresponding command button
+ * will turn on the fan at the prior speed settings.  If the heat is on, it will
+ * turn off the heat
+ */
 def fanOn() {
     if (device.currentValue("heatMode") == heatModeMap().Heat) {
         setHeatMode(heatModeMap().Off)
     }
     setFanMode(FanControlSpeedMapping().on)
 }
+/**
+ * Hubitat capability "Thermostat" has heat() with corresponding command button
+ * will turn on the heat at the prior heat temperature point
+ */
 def heat() {
     setHeatMode("Heat")
 }
+/**
+ * Hubitat capability "Thermostat" has off() with corresponding command button
+ * will turn the unit off
+ */
 def off() {
     setFanMode(FanControlSpeedMapping().off)
 }
+/**
+ * Hubitat capability "Thermostat" has setCoolingSetpoint(temperature)
+ * with corresponding command button
+ * HOWEVER - We Don't support this for the link models
+ * This will produce an error in the log
+ * @param temperature
+ * @return nothing
+ */
 def setCoolingSetpoint(temperature) {
     log.error("DYSON Cooling Setpoint is not supported")
 }
 /**
- * Hubitat capability "ThermostatHeatingSetpoint" has setHeatingSetpoint(temperature)
+ * Hubitat capability "Thermostat" and "ThermostatHeatingSetpoint" has setHeatingSetpoint(temperature)
  * with corresponding command button
  * @param temperature string in the unit (F/C) used by this Hubitat
  * @return nothing
@@ -736,8 +827,8 @@ def setHeatingSetpoint(temperature) {
     //attrib: heatingSetpoint
     if (state.canHeat) {
         def kelvinStr = (temperatureScale == "F") ?
-                HeatTargetFromFahrenheit(temperature.toString().toBigDecimal()) :
-                HeatTargetFromCelsius(temperature.toString().toBigDecimal())
+                heatTargetFromFahrenheit(temperature.toString().toBigDecimal()) :
+                heatTargetFromCelsius(temperature.toString().toBigDecimal())
         def config = [(DYSON_PARAM_HOT_COOL_STATE_MAP().heatMode) : heatModeMap().Heat,
                       (DYSON_PARAM_HOT_COOL_STATE_MAP().heatTempTarget): kelvinStr]
         log.info("DYSON Heat Target: ${config}")
@@ -747,6 +838,12 @@ def setHeatingSetpoint(temperature) {
     }
 }
 
+/**
+ * Hubitat capability "Thermostat" has setThermostatFanMode(fanmode)
+ * with corresponding command button
+ * @param fanmode string enum ["on", "circulate", "auto"] used by this Hubitat
+ * @return nothing
+ */
 def setThermostatFanMode(fanmode) {
     //ENUM ["on", "circulate", "auto"]
     if (fanmode.toString() == "on") {
@@ -758,6 +855,12 @@ def setThermostatFanMode(fanmode) {
     }
 }
 
+/**
+ * Hubitat capability "Thermostat" has setThermostatMode(thermostatmode)
+ * with corresponding command button
+ * @param thermostatmode string enum ["auto", "off", "heat", "emergency heat", "cool"] used by this Hubitat
+ * @return nothing
+ */
 def setThermostatMode(thermostatmode) {
     //ENUM ["auto", "off", "heat", "emergency heat", "cool"]
     if (thermostatmode.toString() == "auto") {
