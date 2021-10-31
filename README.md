@@ -22,7 +22,7 @@ discussion from others.  It may not work.  There may be problems.
 The drivers are as follows:
 ### *Unofficial* Dyson Pure Hot Cool Link driver: dyson-pure-hotcool-link-driver.groovy
 This driver is intended to work with Dyson Pure Cool Link/Dyson Pure Cool Link Desk/Dyson Pure Hot Cool Link.
-However, I have only tested it with the latter, an HP02 unit.
+However, I have only tested it with the latter, an HP02 (455) unit.
 
 Devices this driver tries to support (the number coosponds to the last part of the number at the end of the
 Device's WiFi SSID sticker):
