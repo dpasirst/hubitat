@@ -57,7 +57,7 @@ Device's WiFi SSID sticker):
 - Save and configure
 
 To use this with Rule Machine, it will present itself as a Fan and Thermostat; however,
-there is more functionality available through driver specific commands.  These are accessable
+there is more functionality available through driver specific commands.  These are accessible
 in Rule Machine via Run Custom Action -> Actuator.  Then any custom command can be selected.
 If the selected custom command takes a parameter on the drivers page, the same parameter
 value can be specified here. Note: specify "string" - all custom commands for this driver
