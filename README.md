@@ -24,7 +24,7 @@ The drivers are as follows:
 This driver is intended to work with Dyson Pure Cool Link/Dyson Pure Cool Link Desk/Dyson Pure Hot Cool Link.
 However, I have only tested it with the latter, an HP02 (455) unit.
 
-Devices this driver tries to support (the number coosponds to the last part of the number at the end of the
+Devices this driver tries to support (the number corresponds to the last part of the number at the end of the
 Device's WiFi SSID sticker):
 - PURE COOL LINK "475"
 - PURE COOL LINK DESK "469"
@@ -34,7 +34,7 @@ Device's WiFi SSID sticker):
 This driver is intended to work with Dyson Pure Cool/Dyson Pure Cool Desk/Dyson Pure Cool Formaldehyde/Dyson Pure Hot Cool.
 I do not own or have access to any of these units.  I do not know if this code will work.
 
-Devices this driver tries to support (the number coosponds to the last part of the number at the end of the
+Devices this driver tries to support (the number corresponds to the last part of the number at the end of the
 Device's WiFi SSID sticker):
 - PURE COOL "438"
 - PURE COOL FORMALDEHYDE "438E"
@@ -45,7 +45,7 @@ Device's WiFi SSID sticker):
 This driver is intended to work with Dyson Pure Humidify Cool.
 I do not own or have access to this type of unit.  I do not know if this code will work.
 
-Devices this driver tries to support (the number coosponds to the last part of the number at the end of the
+Devices this driver tries to support (the number corresponds to the last part of the number at the end of the
 Device's WiFi SSID sticker):
 - PURE HUMIDIFY COOL "358"
 
