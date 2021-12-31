@@ -41,7 +41,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.0.1'  }
+public static String version()      {  return '0.0.2'  }
 
 def static fanPowerMode() {["On":"ON","Off":"OFF"]}
 def static fanAutoMode() {["On":"ON","Off":"OFF"]}
@@ -171,7 +171,7 @@ metadata {
             input 'unitSSID', 'text', required: true, defaultValue: '', title: "WiFi SSID", description: "WiFi SSID on the sticker of the Dyson Unit (not your home's ssid)"
             input 'unitPassword', 'password', required: true, defaultValue: '', title: "Unit Password", description: "Dyson Unit WiFi password on the sticker (not your Dyson Online password)"
             input 'unitAddress', 'text', required: true, defaultValue: '', title: "Unit IP Address", description: "The Network IP Address of the unit on your home network"
-            input 'pollInterval', 'enum', title: "Notion Poll Interval", required: true, defaultValue: 'Manual Poll Only', options: ['Manual Poll Only','1 Minute','5 Minutes', '10 Minutes', '15 Minutes', '30 Minutes', '1 Hour', '3 Hours']
+            input 'pollInterval', 'enum', title: "Dyson Poll Interval", required: true, defaultValue: 'Manual Poll Only', options: ['Manual Poll Only','1 Minute','5 Minutes', '10 Minutes', '15 Minutes', '30 Minutes', '1 Hour', '3 Hours']
         }
     }
 }
