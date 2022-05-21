@@ -2,7 +2,7 @@
  *  Dyson Pure Humidify Hubitat Driver - UNOFFICIAL
  *  Author: David Pasirstein
  *
- *  Copyright (c) 2021 David Pasirstein
+ *  Copyright (c) 2022 David Pasirstein
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -41,7 +41,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.0.2'  }
+public static String version()      {  return '0.0.4'  }
 
 def static fanPowerMode() {["On":"ON","Off":"OFF"]}
 def static fanAutoMode() {["On":"ON","Off":"OFF"]}
@@ -362,8 +362,8 @@ void connectToUnit() {
             log.error("DYSON unsupported device, will not attempt to connect")
             return
         }
-        if (state.clientId == null) {
-            state.clientId = UUID.randomUUID().toString()
+        if (state.clientId == null || state.clientId.toString().contains('-')) {
+            state.clientId = UUID.randomUUID().toString().tokenize('-').last()
         }
         log.debug("DYSON:init mqtt to: tcp://${UNIT_ADDRESS()}:1883 as client: ${state.clientId}")
         interfaces.mqtt.connect("tcp://${UNIT_ADDRESS()}:1883",state.clientId as String,serial,hashedPass)
@@ -509,19 +509,38 @@ def processMessageState(Map productState, boolean isUpdate) {
             if (attName == DYSON_PARAM_COOL_STATE_MAP().carbonFilterLifePct ||
             attName == DYSON_PARAM_COOL_STATE_MAP().hepaFilterLifePct) {
                 sendEvent(name: key, value: val)
-                def cfl = device.currentValue("carbonFilterLifePct")?.toString()?.toInteger()
-                def hfl = device.currentValue("hepaFilterLifePct")?.toString()?.toInteger()
+                def cfl = 1
+                if (device.currentValue("carbonFilterLifePct") == "INV") {
+                    cfl = 1
+                } else {
+                    try {
+                        cfl = device.currentValue("carbonFilterLifePct")?.toString()?.toInteger()
+                    } catch (Exception ignored) {
+                    }
+                }
+                def hfl = 1
+                try {
+                    hfl  = device.currentValue("hepaFilterLifePct")?.toString()?.toInteger()
+                } catch (Exception ignored) {
+                }
                 if (cfl == null) {cfl = 1}
                 if (hfl == null) {hfl = 1}
                 sendEvent(name: "filterStatus",
                         value: (cfl > 0 && hfl > 0) ? "normal" : "replace")
             } else if ([DYSON_PARAM_COOL_STATE_MAP().targetHumidityPct,
                         DYSON_PARAM_COOL_STATE_MAP().autoTargetHumidityPct].contains(attName)) {
-                def nval = val.toInteger()
-                sendEvent(name: "${attName}Friendly", value: nval)
+                try {
+                    def nval = val.toInteger()
+                    sendEvent(name: "${attName}Friendly", value: nval)
+                } catch (Exception ignored) {
+                    sendEvent(name: "${attName}Friendly", value: val)
+                }
             } else if ([DYSON_PARAM_COOL_STATE_MAP().timeUntilNextDeepCleaningHrs,
                         DYSON_PARAM_COOL_STATE_MAP().timeUntilCleaningCompletesMinutes].contains(attName)) {
-                val = val.toString().toInteger()
+                try {
+                    val = val.toString().toInteger()
+                }catch (Exception ignored) {
+                }
             }
             sendEvent(name: key, value: val)
         }
@@ -535,11 +554,15 @@ def processMessageState(Map productState, boolean isUpdate) {
             }
             if (val != null) {
                 if (attName == DYSON_PARAM_HOT_COOL_STATE_MAP().heatTempTarget) {
-                    def nval = kelvinToCelsius(val)
-                    if (getTemperatureScale() == "F") {
-                        nval = celsiusToFahrenheit(nval as BigDecimal)
+                    try {
+                        def nval = kelvinToCelsius(val)
+                        if (getTemperatureScale() == "F") {
+                            nval = celsiusToFahrenheit(nval as BigDecimal)
+                        }
+                        sendEvent(name: "heatingSetpoint", value: nval)
+                    } catch (Exception e) {
+                        //ignore, val is likely "Off"
                     }
-                    sendEvent(name: "heatingSetpoint", value: nval)
                 }
                 sendEvent(name: key, value: val)
             }
@@ -558,23 +581,38 @@ def processMessageEnvironmental(Map data) {
         def val = data.getOrDefault(attName, null)
         if (val != null) {
             if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().temperatureKelvin) {
-                def nval = kelvinToCelsius(val)
-                if (getTemperatureScale() == "F") {
-                    nval = celsiusToFahrenheit(nval as BigDecimal)
+                try {
+                    def nval = kelvinToCelsius(val)
+                    if (getTemperatureScale() == "F") {
+                        nval = celsiusToFahrenheit(nval as BigDecimal)
+                    }
+                    //capability "TemperatureMeasurement"
+                    //temperature - NUMBER, unit:°F || °C
+                    sendEvent(name: "temperature", value: nval)
+                } catch (Exception e) {
+                    //val is likely "Off"
+                    sendEvent(name: "temperature", value: val)
                 }
-                //capability "TemperatureMeasurement"
-                //temperature - NUMBER, unit:°F || °C
-                sendEvent(name: "temperature", value: nval)
             } else if ([DYSON_PARAM_ENVIRONMENTAL_MAP().humidityPercentage].contains(attName)) {
-                def nval = val.toString().toInteger()
-                //capability "RelativeHumidityMeasurement"
-                //attrib humidity NUMBER, unit:%rh
-                sendEvent(name: "humidity", value: nval)
+                try {
+                    def nval = val.toString().toInteger()
+                    //capability "RelativeHumidityMeasurement"
+                    //attrib humidity NUMBER, unit:%rh
+                    sendEvent(name: "humidity", value: nval)
+                } catch (Exception e) {
+                    //val is likely "Off"
+                    sendEvent(name: "temperature", value: val)
+                }
             }
             if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().particulateMatter) {
-                def particulates = val.toString().toInteger()
-                if (particulates > 500) { particulates = 500 }
-                sendEvent(name: "airQualityIndex", value: particulates)
+                try {
+                    def particulates = val.toString().toInteger()
+                    if (particulates > 500) { particulates = 500 }
+                    sendEvent(name: "airQualityIndex", value: particulates)
+                } catch (Exception e) {
+                    //val is likely "Off"
+                    sendEvent(name: "airQualityIndex", value: val)
+                }
             }
             sendEvent(name: key, value: val)
         }

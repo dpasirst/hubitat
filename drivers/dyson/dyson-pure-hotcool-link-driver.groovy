@@ -2,7 +2,7 @@
  *  Dyson Pure Cool Link/Pure Hot Cool Link Hubitat Driver - UNOFFICIAL
  *  Author: David Pasirstein
  *
- *  Copyright (c) 2021 David Pasirstein
+ *  Copyright (c) 2022 David Pasirstein
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -42,7 +42,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.1.1'  }
+public static String version()      {  return '0.1.2'  }
 
 def static fanModeMap() {["Off":"OFF","Fan":"FAN","Auto":"AUTO"]}
 def static fanSpeedMap() {["1":"0001","2":"0002","3":"0003","4":"0004","5":"0005","6":"0006",
@@ -311,8 +311,8 @@ void connectToUnit() {
             log.error("DYSON unsupported device, will not attempt to connect")
             return
         }
-        if (state.clientId == null) {
-            state.clientId = UUID.randomUUID().toString()
+        if (state.clientId == null || state.clientId.toString().contains('-')) {
+            state.clientId = UUID.randomUUID().toString().tokenize('-').last()
         }
         log.debug("DYSON:init mqtt to: tcp://${UNIT_ADDRESS()}:1883 as client: ${state.clientId}")
         interfaces.mqtt.connect("tcp://${UNIT_ADDRESS()}:1883",state.clientId as String,serial,hashedPass)
@@ -455,9 +455,14 @@ def processMessageState(Map productState, boolean isUpdate) {
             val = productState.getOrDefault(attName,null)
         }
         if (val != null) {
+            def nval = 1
+            try {
+                nval = (val as String).toInteger()
+            } catch (Exception e) {
+            }
             if (attName == DYSON_PARAM_COOL_STATE_MAP().filterLifeHrs) {
                 sendEvent(name: "filterStatus",
-                        value: ((val as String).toInteger() > 0 ) ? "normal" : "replace")
+                        value: (nval > 0 ) ? "normal" : "replace")
             }
             sendEvent(name: key, value: val)
         }
@@ -471,11 +476,15 @@ def processMessageState(Map productState, boolean isUpdate) {
             }
             if (val != null) {
                 if (attName == DYSON_PARAM_HOT_COOL_STATE_MAP().heatTempTarget) {
-                    def nval = kelvinToCelsius(val)
-                    if (getTemperatureScale() == "F") {
-                        nval = celsiusToFahrenheit(nval as BigDecimal)
+                    try {
+                        def nval = kelvinToCelsius(val)
+                        if (getTemperatureScale() == "F") {
+                            nval = celsiusToFahrenheit(nval as BigDecimal)
+                        }
+                        sendEvent(name: "heatingSetpoint", value: nval)
+                    } catch (Exception e) {
+                        //ignore, val is likely "Off"
                     }
-                    sendEvent(name: "heatingSetpoint", value: nval)
                 }
                 sendEvent(name: key, value: val)
             }
@@ -494,28 +503,44 @@ def processMessageEnvironmental(Map data) {
         def val = data.getOrDefault(attName, null)
         if (val != null) {
             if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().temperatureKelvin) {
-                def nval = kelvinToCelsius(val)
-                if (getTemperatureScale() == "F") {
-                    nval = celsiusToFahrenheit(nval as BigDecimal)
+                try {
+                    def nval = kelvinToCelsius(val)
+                    if (getTemperatureScale() == "F") {
+                        nval = celsiusToFahrenheit(nval as BigDecimal)
+                    }
+                    //capability "TemperatureMeasurement"
+                    //temperature - NUMBER, unit:°F || °C
+                    sendEvent(name: "temperature", value: nval)
+                } catch (Exception e) {
+                    //val is likely "Off"
+                    sendEvent(name: "temperature", value: val)
                 }
-                //capability "TemperatureMeasurement"
-                //temperature - NUMBER, unit:°F || °C
-                sendEvent(name: "temperature", value: nval)
             } else if ([DYSON_PARAM_ENVIRONMENTAL_MAP().humidityPercentage].contains(attName)) {
-                def nval = val.toString().toInteger()
-                //capability "RelativeHumidityMeasurement"
-                //attrib humidity NUMBER, unit:%rh
-                sendEvent(name: "humidity", value: nval)
+                try {
+                    def nval = val.toString().toInteger()
+                    //capability "RelativeHumidityMeasurement"
+                    //attrib humidity NUMBER, unit:%rh
+                    sendEvent(name: "humidity", value: nval)
+                } catch (Exception e) {
+                    //val is likely "Off"
+                    sendEvent(name: "temperature", value: val)
+                }
             }
             if (attName == DYSON_PARAM_ENVIRONMENTAL_MAP().particulateMatter) {
-                def particulates = val.toString().toInteger()
-                if (particulates > 500) { particulates = 500 }
-                sendEvent(name: "airQualityIndex", value: particulates)
+                try {
+                    def particulates = val.toString().toInteger()
+                    if (particulates > 500) { particulates = 500 }
+                    sendEvent(name: "airQualityIndex", value: particulates)
+                } catch (Exception e) {
+                    //val is likely "Off"
+                    sendEvent(name: "airQualityIndex", value: val)
+                }
             }
             sendEvent(name: key, value: val)
         }
     }
 }
+
 
 /**
  * Hubitat will send status info to this method Error's start with Error and Status starts with Status
