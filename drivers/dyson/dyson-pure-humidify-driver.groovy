@@ -41,7 +41,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.0.4'  }
+public static String version()      {  return '0.0.5'  }
 
 def static fanPowerMode() {["On":"ON","Off":"OFF"]}
 def static fanAutoMode() {["On":"ON","Off":"OFF"]}
@@ -169,9 +169,10 @@ metadata {
             //input 'password', 'password', required: true, defaultValue: '', title: "password", description: "Type Your Dyson Online password Here"
             //input 'countryCode', 'text', title: "Country Code (ISO 3166-1 alpha-2)", required: true, defaultValue: 'US', description: "Type Your 2 Character Country Code Here"
             input 'unitSSID', 'text', required: true, defaultValue: '', title: "WiFi SSID", description: "WiFi SSID on the sticker of the Dyson Unit (not your home's ssid)"
-            input 'unitPassword', 'password', required: true, defaultValue: '', title: "Unit Password", description: "Dyson Unit WiFi password on the sticker (not your Dyson Online password)"
+            input 'unitPassword', 'password', required: true, defaultValue: '', title: "Unit Password", description: "Dyson Unit WiFi password on the sticker (not your Dyson Online password), alternately use the b64 credential returned from Dyson cloud and configure the password type"
             input 'unitAddress', 'text', required: true, defaultValue: '', title: "Unit IP Address", description: "The Network IP Address of the unit on your home network"
             input 'pollInterval', 'enum', title: "Dyson Poll Interval", required: true, defaultValue: 'Manual Poll Only', options: ['Manual Poll Only','1 Minute','5 Minutes', '10 Minutes', '15 Minutes', '30 Minutes', '1 Hour', '3 Hours']
+            input 'passwdType', 'enum', title: "Password Type", required: true, defaultValue: 'Password', options: ['Password','b64 Credential']
         }
     }
 }
@@ -344,6 +345,13 @@ private DYSON_MQTT_MSG_STATE_SET() {"STATE-SET"}
 private DYSON_MQTT_MSG_SND_GET_ENVIRONMENTAL() {"REQUEST-PRODUCT-ENVIRONMENT-CURRENT-SENSOR-DATA"}
 private DYSON_MQTT_MSG_SND_GET_CURRENT() {"REQUEST-CURRENT-STATE"}
 
+private isAlreadyHashedPassword() {
+    switch (passwdType) {
+        case 'b64 Credential' : return true; break;
+        default             : return false; break;
+    }
+}
+
 /**
  * method to connect and subscribe on the device
  */
@@ -352,7 +360,7 @@ void connectToUnit() {
     if (!interfaces.mqtt.isConnected()) {
         def serial = ""
         def device_type = ""
-        def hashedPass = hashDevicePassword(UNIT_PASSWD() as String)
+        def hashedPass = isAlreadyHashedPassword() ? UNIT_PASSWD() : hashDevicePassword(UNIT_PASSWD() as String)
         (serial,device_type) = decodeSSID(UNIT_SSID() as String)
         if (serial == null || serial == "" || device_type == null || device_type == "") {
             log.error("DYSON could not decode the provided WiFi SSID")
