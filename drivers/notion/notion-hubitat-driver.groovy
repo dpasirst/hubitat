@@ -2,7 +2,7 @@
  *  Notion Driver - UNOFFICIAL
  *  Author: David Pasirstein
  *
- *  Copyright (c) 2021 David Pasirstein
+ *  Copyright (c) 2021-2023 David Pasirstein
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -14,7 +14,6 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *
- *  This is an UNOFFICIAL Driver.
  *  Both this driver and the child driver must be installed.  This parent Notion Driver will
  *  use the Notion Sensor child driver to create the discovered sensor devices and update
  *  data accordingly.
@@ -24,8 +23,14 @@
  *  - Choose new driver to add this driver and then do it again for the child Notion Sensor driver
  *  - Go to Devices -> Add Virtual Device - give it a name and select this driver
  *  - Save and configure
+ *
+ *
+ * Some of this code references work:
+ * Copyright (c) 2019-2023 Aaron Bach MIT License
+ * https://github.com/bachya/aionotion
+ *
  */
-public static String version()      {  return '0.0.5'  }
+public static String version()      {  return '0.1.0'  }
 
 metadata {
     definition (name: 'Notion Driver (https://getnotion.com/)',
@@ -111,7 +116,6 @@ void notionAuthHandler(resp, data) {
         log.warn 'Calling ' + "auth"//atomicState.gn_base_uri
         log.warn resp.getStatus() + ':' + resp.getErrorMessage()
     } else {
-        def now = new Date();
         sendEvent(name: 'current_notion_lastauth', value: now.getTime());
         //response structure:
         //'{"users":{"id":65894,"uuid":"c046a481-d084-4d73-bea2-8ecfeeeebce1","first_name":"givenname",
@@ -180,7 +184,8 @@ void notionHandler(resp, data) {
         def json = parseJson(resp.data)
 
         if (json != null) {
-            def tasks = pollTasksSync(atomicState.accessToken)
+            //def tasks = pollTasksSync(atomicState.accessToken)
+            def listeners = pollListenersSync(atomicState.accessToken)
             def child
             //log.debug "Server Returned ${json.sensors?.size()} sensors"
             for (sensor in json.sensors) {
@@ -190,7 +195,7 @@ void notionHandler(resp, data) {
                             "dpasirst",
                             'Notion Sensor (child) Driver',
                             false)
-                    child.updateSensor(sensor, tasks?.tasks)
+                    child.updateSensor(sensor, listeners?.listeners)
                 }
             }
         }
@@ -231,15 +236,16 @@ void notionSensorHandler(resp, data) {
         log.warn resp.getStatus() + ':' + resp.getErrorMessage()
     } else {
         def json = parseJson(resp.data)
-        String sensor = json?.sensors?.id
+        String sensorUUID = json?.sensors?.uuid
         String device_key = json?.sensors?.device_key
 
         if (json != null) {
-            def tasks = pollTasksSync((String)atomicState.accessToken,(String)sensor)
+            def listeners = pollListenersSync((String)atomicState.accessToken,(String)sensorUUID)
             def child = childDevices?.find {(it.deviceNetworkId == device_key) }
             if (child != null) {
                 log.debug "Updating Device ${device_key}"
-                child.updateSensor(json.sensors, tasks?.tasks)
+                //child.updateSensor(json.sensors, tasks?.tasks)
+                child.updateSensor(json.sensors, listeners?.listeners)
             } else {
                 log.warn "Failed to Find Device for Update: ${device_key}"
             }
@@ -248,37 +254,37 @@ void notionSensorHandler(resp, data) {
 }
 
 /**
- * the is a synchronous http request to obtain the notion tasks configured to the sensors
+ * the is a synchronous http request to obtain the notion listeners configured to the sensors
  * @param accessToken
- * @param sensorid this does ont seem to work, it was intended to limit the response to
- * only the sensord specified
- * @return already parsed json object containing all the current tasts
+ * @param sensorUUID limit the response to only the sensor specified, note UUID not sensor ID
+ * @return already parsed json object containing all the current listeners
  */
-Object pollTasksSync(String accessToken, String sensorid = null) {
+Object pollListenersSync(String accessToken, String sensorUUID = null) {
     if (accessToken == null || accessToken.length() < 2) {
         return
     }
 
     def ParamsGN;
     def result;
+    def url = "https://api.getnotion.com/api/sensor/listeners"
+    if (sensorUUID != null) {
+        url = "https://api.getnotion.com/api/sensors/${sensorUUID}/listeners"
+    }
     ParamsGN = [
-            uri: "https://api.getnotion.com/api/tasks/",
+            uri: url,
             contentType: 'application/json',
             headers: [ 'Authorization':"Token token="+accessToken ]
     ]
-    if (sensorid != null) {
-        ParamsGN.body = [ sensor_id : [sensorid] ]
-    }
-    //log.debug('Poll tasks getnotion.com: ' + ParamsGN.uri)
+    log.debug('Poll Listeners getnotion.com: ' + ParamsGN.uri)
     try {
         httpGet(ParamsGN) { resp ->
-            //log.debug('Task Polling getnotion.com resp')
+            //log.debug('Listener Polling getnotion.com resp')
 
             if(resp.getStatus() < 200 || resp.getStatus() >= 300) {
                 log.warn 'Retrieving tasks failed'
                 log.warn resp.getStatus() + ':' + resp.getErrorMessage()
             } else {
-                //log.warn "Tasks: " + resp.data
+                //log.warn "Listeners: " + resp.data
                 //result = parseJson(resp.data) -- this is already parsed
                 result = resp.data
             }
@@ -288,6 +294,7 @@ Object pollTasksSync(String accessToken, String sensorid = null) {
     }
     return result
 }
+
 
 String getNotionSensors(){
     return state.notionSensors;
@@ -334,3 +341,42 @@ private deleteChild(id){
         }
     }
 }
+
+/*
+    {
+        "sensors": [
+            {
+                "id": 234678,
+                "uuid": "8eae56f9-86f6-4100-9a91-cb865a0b81a9",
+                "user": {
+                    "id": 12345,
+                    "email": "dpasirst@gmail.com"
+                },
+                "bridge": {
+                    "id": 987654,
+                    "hardware_id": "0x345cb345b1234a"
+                },
+                "last_bridge_hardware_id": "5db4a3e2-95d9-45da-b6a0-68acd8ab5b07",
+                "name": "Some Sensor",
+                "location_id": 345897,
+                "system_id": 45678,
+                "hardware_id": "0x857234acb345c",
+                "hardware_revision": 4,
+                "firmware_version": "1.1.0",
+                "device_key": "0x335b34c2435f234a",
+                "encryption_key": true,
+                "installed_at": "2019-10-01T00:00:00.554Z",
+                "calibrated_at": "2023-08-30T01:15:77.876Z",
+                "last_reported_at": "2023-06-11T15:12:34.000Z",
+                "missing_at": null,
+                "updated_at": "2023-07-11T11:43:34.667Z",
+                "created_at": "2020-06-07T02:16:76.887Z",
+                "signal_strength": 4,
+                "firmware": {
+                    "status": "valid"
+                },
+                "surface_type": null
+            }
+        ]
+    }
+ */

@@ -2,7 +2,7 @@
  *  Notion Sensor (child) Driver - UNOFFICIAL
  *  Author: David Pasirstein
  *
- *  Copyright (c) 2021 David Pasirstein
+ *  Copyright (c) 2021-2023 David Pasirstein
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -14,14 +14,17 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *
- *  This is an UNOFFICIAL Driver.
  *  This is a child driver and not intended to be used directly.  Both this driver and the
  *  parent driver must be installed.  The parent Notion Driver will use this driver to create
  *  the discovered sensor devices and update data accordingly.
  *
+ * Some of this code references work:
+ * Copyright (c) 2019-2023 Aaron Bach MIT License
+ * https://github.com/bachya/aionotion
+ *
 */
 
-public static String version()      {  return '0.0.5'  }
+public static String version()      {  return '0.1.0'  }
 
 metadata {
     definition (name: 'Notion Sensor (child) Driver',
@@ -40,6 +43,7 @@ metadata {
         capability "ContactSensor"
 
         attribute 'sensor_id', 'string'
+        attribute 'sensor_uuid', 'string'
         attribute 'current_poll_update', 'string'
         attribute 'last_reported_at', 'string'
         attribute 'signal_strength', 'number'
@@ -60,7 +64,6 @@ metadata {
         attribute "contact_change_last_reported_at", "string"
 
     }
-
 preferences() {
         input 'tscale', 'enum', title: "Temperature Reporting", description: "Will Change on Next Poll\nunit of measurement", required: true, defaultValue: 'system default', options: ['system default','celsius','fahrenheit']
     }
@@ -85,6 +88,7 @@ void installed() {
             "value between polling / refresh but the change event will still indicate it had occurred."
 }
 
+
 /**
  * this function is called by the parent Notion driver when getnotion.com is polled
  * which may occur on a full poll or an individual sensor device refresh
@@ -94,7 +98,22 @@ void installed() {
  * this may contain one or many tasks, it will process tasks that match the sensor_id and
  * ignore those that do not
  */
-void updateSensor(Object sensor, Object tasks) {
+void updateSensor(Object sensor, Object listeners) {
+    // from: https://github.com/bachya/aionotion/blob/dev/aionotion/sensor/models.py#L145
+    def SensorTypes = [
+        BATTERY: 0,
+        MOLD: 2,
+        TEMPERATURE: 3,
+        LEAK_STATUS: 4,
+        SAFE: 5,
+        DOOR: 6,
+        SMOKE: 7,
+        CONNECTED: 10,
+        HINGED_WINDOW: 12,
+        GARAGE_DOOR: 13,
+        SLIDING_DOOR_OR_WINDOW: 32,
+        UNKNOWN: 99
+    ]
     if (sensor == null) {
         return
     }
@@ -103,17 +122,14 @@ void updateSensor(Object sensor, Object tasks) {
     if (sensor.id != null) {
         sendEvent(name: 'sensor_id', value: sensor.id)
     }
+    if (sensor.uuid != null) {
+        sendEvent(name: 'sensor_uuid', value: sensor.uuid)
+    }
     if (sensor.last_reported_at != null) {
         sendEvent(name: 'last_reported_at', value: sensor.last_reported_at)
     }
     if (sensor.signal_strength != null) {
         sendEvent(name: 'signal_strength', value: sensor.signal_strength)
-    }
-    if (sensor.rssi != null) {
-        sendEvent(name: 'rssi', value: sensor.rssi)
-    }
-    if (sensor.lqi != null) {
-        sendEvent(name: 'lqi', value: sensor.lqi)
     }
     if (sensor.firmware_version != null) {
         sendEvent(name: 'firmware_version', value: sensor.firmware_version)
@@ -121,30 +137,40 @@ void updateSensor(Object sensor, Object tasks) {
     if (sensor.hardware_revision != null) {
         sendEvent(name: 'hardware_revision', value: sensor.hardware_revision)
     }
-    for (task in tasks) {
-        if (task.sensor_id == null || task.sensor_id != sensor?.id) {
+    for (listener in listeners) {
+        if (listener.sensor_id == null || listener.sensor_id != sensor?.uuid) {
             continue
         }
-        def val = findStateValue(task)
-        def valUpdated = findTaskLastReported(task)
-        if (task.task_type == "missing") {
+        def val = findStateValue(listener)
+        def valUpdated = findTaskLastReported(sensor, listener)
+        if (listener.definition_id == SensorTypes.CONNECTED) {
             //first presence
             val = (val == "not_missing") ? "present" : "not present"
             sendTaskUpdate('presence', val, valUpdated)
-        } else if (task.task_type == "leak") {
+        } else if (listener.definition_id == SensorTypes.LEAK_STATUS) {
             val = (val == "no_leak") ? "dry" : "wet"
             sendTaskUpdate('water', val, valUpdated)
-        } else if (task.task_type == "temperature") {
+        } else if (listener.definition_id == SensorTypes.TEMPERATURE) {
             if (val != null) {
-                val = new BigDecimal(val)
-                if (getTemperatureScale() == "F" || tscale == 'fahrenheit') {
-                    val = celsiusToFahrenheit(val)
+                def matcher = (val =~ /\d+/)
+                if (matcher.find()) {
+                    val = matcher.group().toInteger()
+                } else {
+                    val = 0
                 }
             } else {
                 val == new BigDecimal(0)
             }
+            //if (val != null) {
+            //    val = new BigDecimal(val)
+            //    if (getTemperatureScale() == "F" || tscale == 'fahrenheit') {
+            //        val = celsiusToFahrenheit(val)
+            //    }
+            //} else {
+            //    val == new BigDecimal(0)
+            //}
             sendTaskUpdate('temperature', val, valUpdated)
-        } else if (task.task_type == "low_battery") {
+        } else if (listener.definition_id == SensorTypes.BATTERY) {
             if (val == "high") {
                 val = 100
             } else if (val == "medium"){
@@ -157,19 +183,19 @@ void updateSensor(Object sensor, Object tasks) {
                 val = 0
             }
             sendTaskUpdate('battery', val, valUpdated)
-        } else if (task.task_type == "alarm") {
+        } else if (listener.definition_id == SensorTypes.SMOKE) {
             if (val == "no_alarm") {
                 val = "clear"
             } else {
                 val = "detected"
             }
             sendTaskUpdate('smoke', val, valUpdated)
-        } else if (task.task_type == "door" ||
-                task.task_type == "sliding" ||
-                task.task_type == "safe" ||
-                task.task_type == "garage_door" ||
-                task.task_type == "window_hinged_horizontal" ||
-                task.task_type == "window_hinged_vertical") {
+        } else if (listener.definition_id == SensorTypes.DOOR ||
+                listener.definition_id == SensorTypes.SLIDING_DOOR_OR_WINDOW ||
+                listener.definition_id == SensorTypes.SAFE ||
+                listener.definition_id == SensorTypes.GARAGE_DOOR ||
+                listener.definition_id == SensorTypes.HINGED_WINDOW
+        ) {
             if (val != "closed") {
                 val = "open"
             }
@@ -181,17 +207,108 @@ void updateSensor(Object sensor, Object tasks) {
     }
 }
 
-def findStateValue(Object task) {
-    return (task?.status?.insights?.primary?.to_state) ? task?.status?.insights?.primary?.to_state : task?.status?.value
+def findStateValue(Object listener) {
+    return (listener?.insights?.primary?.value) ? listener?.insights?.primary?.value : listener?.status_localized?.state
 }
 
-def findTaskLastReported(Object task) {
-    return (task?.status?.insights?.primary?.data_received_at) ? task?.status?.insights?.primary?.data_received_at : task?.status?.received_at
+def findTaskLastReported(Object sensor, Object listener) {
+    return (listener?.insights?.primary?.data_received_at) ? listener?.insights?.primary?.data_received_at : sensor?.last_reported_at
 }
-
 def sendTaskUpdate(String capability_name, Object val, Object date) {
     sendEvent(name: capability_name, value: val)
     sendEvent(name: capability_name + "_did_change",
             value: (device.currentValue(capability_name + "_change_last_reported_at") == date) ? "false" : true)
     sendEvent(name: capability_name + "_change_last_reported_at", value: date)
 }
+/*
+         [
+            id:9463db70-77f0-4f5e-a5f0-5159cea20000,
+            definition_id:10,
+            created_at:2021-08-06T13:44:33.721Z,
+            type:sensor, model_version:2.0,
+            sensor_id:a47a866d-c0c4-41bb-9881-9e6724039680,
+            status_localized:[
+                state:Connected,
+                description:Nov 7 at 7:22pm
+            ],
+            insights:[
+                primary:[
+                    origin:[
+                        id:19992762-c119-49c8-bff7-4f636cdc2577,
+                        type:Sensor
+                    ],
+                    value:not_missing,
+                    data_received_at:2023-11-06T21:25:19.611Z
+                ]
+            ],
+            configuration:[:],
+            pro_monitoring_status:ineligible
+        ],
+        [
+            id:98a9c2d2-5835-431d-9661-438ea92cda79,
+            definition_id:24,
+            created_at:2019-10-19T14:44:22.624Z,
+            type:sensor,
+            model_version:1.0,
+            sensor_id:a47a866d-c0c4-41bb-9881-9e6724039680,
+            status_localized:[state:Unknown, description:Jun 8 at 3:47pm],
+            insights:[
+                primary:[
+                    origin:null,
+                    value:null,
+                    data_received_at:null
+                ]
+            ],
+            configuration:[:],
+            pro_monitoring_status:ineligible
+        ],
+        [
+            id:dd0eb248-7f43-42bf-8d15-e99a85140afa,
+            definition_id:4,
+            created_at:2020-10-16T00:11:23.434Z,
+            type:sensor, model_version:2.2,
+            sensor_id:a47a866d-c0c4-41bb-9881-9e6724039680,
+            status_localized:[
+                state:No Leak,
+                description:Nov 8 at 11:08am
+            ],
+            insights:[
+                primary:[
+                    origin:[
+                        id:68a590be-ff58-4d7f-b8c8-23b8a5b6d026,
+                        type:Sensor
+                    ],
+                    value:no_leak,
+                    data_received_at:2023-11-05T16:05:22.473Z
+                ]
+            ],
+            configuration:[:],
+            pro_monitoring_status:eligible
+        ],
+        [
+            id:297edf2a-73f9-430a-892c-47f1998872d8,
+            definition_id:3,
+            created_at:2023-02-24T18:01:05.654Z,
+            type:sensor,
+            model_version:3.0,
+            sensor_id:a47a866d-c0c4-41bb-9881-9e6724039680,
+            status_localized:[
+                state:70°,
+                description:12:12pm
+            ],
+            insights:[
+                primary:[
+                    origin:[:],
+                    value:,
+                    data_received_at:2020-11-04T00:52:43.387Z
+                ]
+            ],
+            configuration:[
+                lower:14.44,
+                upper:31.11,
+                offset:0.0
+            ],
+            pro_monitoring_status:eligible
+        ]
+
+ */
