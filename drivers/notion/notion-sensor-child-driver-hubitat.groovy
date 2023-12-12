@@ -151,6 +151,9 @@ void updateSensor(Object sensor, Object listeners) {
             val = (val == "no_leak") ? "dry" : "wet"
             sendTaskUpdate('water', val, valUpdated)
         } else if (listener.definition_id == SensorTypes.TEMPERATURE) {
+            // seems findStateValue may fail us in this case, so we explicitly
+            // will attempt to obtain the values
+            val = listener?.status_localized?.state
             if (val != null) {
                 def matcher = (val =~ /\d+/)
                 if (matcher.find()) {
@@ -161,15 +164,21 @@ void updateSensor(Object sensor, Object listeners) {
             } else {
                 val == new BigDecimal(0)
             }
-            //if (val != null) {
-            //    val = new BigDecimal(val)
-            //    if (getTemperatureScale() == "F" || tscale == 'fahrenheit') {
-            //        val = celsiusToFahrenheit(val)
-            //    }
-            //} else {
-            //    val == new BigDecimal(0)
-            //}
             sendTaskUpdate('temperature', val, valUpdated)
+            val = listener?.insights?.mold_risk?.value
+            if (val != null) {
+                if (listener?.insights?.mold_risk?.data_received_at) {
+                    valUpdated = listener?.insights?.mold_risk?.data_received_at
+                }
+                sendTaskUpdate('mold_risk', val, valUpdated)
+            }
+            val = listener?.insights?.freeze?.value
+            if (val != null) {
+                if (listener?.insights?.freeze?.data_received_at) {
+                    valUpdated = listener?.insights?.freeze?.data_received_at
+                }
+                sendTaskUpdate('freeze', val, valUpdated)
+            }
         } else if (listener.definition_id == SensorTypes.BATTERY) {
             if (val == "high") {
                 val = 100
