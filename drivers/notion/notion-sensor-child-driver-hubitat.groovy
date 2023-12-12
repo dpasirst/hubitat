@@ -24,7 +24,7 @@
  *
 */
 
-public static String version()      {  return '0.1.0'  }
+public static String version()      {  return '0.1.1'  }
 
 metadata {
     definition (name: 'Notion Sensor (child) Driver',
