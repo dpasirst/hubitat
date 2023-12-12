@@ -30,7 +30,7 @@
  * https://github.com/bachya/aionotion
  *
  */
-public static String version()      {  return '0.1.0'  }
+public static String version()      {  return '0.1.1'  }
 
 metadata {
     definition (name: 'Notion Driver (https://getnotion.com/)',
