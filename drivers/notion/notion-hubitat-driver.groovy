@@ -116,6 +116,7 @@ void notionAuthHandler(resp, data) {
         log.warn 'Calling ' + "auth"//atomicState.gn_base_uri
         log.warn resp.getStatus() + ':' + resp.getErrorMessage()
     } else {
+        def now = new Date()
         sendEvent(name: 'current_notion_lastauth', value: now.getTime());
         //response structure:
         //'{"users":{"id":65894,"uuid":"c046a481-d084-4d73-bea2-8ecfeeeebce1","first_name":"givenname",
