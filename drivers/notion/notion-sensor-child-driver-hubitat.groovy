@@ -2,7 +2,7 @@
  *  Notion Sensor (child) Driver - UNOFFICIAL
  *  Author: David Pasirstein
  *
- *  Copyright (c) 2021-2023 David Pasirstein
+ *  Copyright (c) 2021-2024 David Pasirstein
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -24,7 +24,7 @@
  *
 */
 
-public static String version()      {  return '0.1.1'  }
+public static String version()      {  return '0.1.2'  }
 
 metadata {
     definition (name: 'Notion Sensor (child) Driver',
@@ -148,8 +148,13 @@ void updateSensor(Object sensor, Object listeners) {
             val = (val == "not_missing") ? "present" : "not present"
             sendTaskUpdate('presence', val, valUpdated)
         } else if (listener.definition_id == SensorTypes.LEAK_STATUS) {
-            val = (val == "no_leak") ? "dry" : "wet"
-            sendTaskUpdate('water', val, valUpdated)
+            if (val == "Unknown") {
+                log.error "${sensor.name} Water/Leak Status returned \"${val}\" expected \"no_leak\" or \"leak\""
+                sendTaskUpdate('water', val, "dry")
+            } else {
+                val = (val == "no_leak") ? "dry" : "wet"
+                sendTaskUpdate('water', val, valUpdated)
+            }
         } else if (listener.definition_id == SensorTypes.TEMPERATURE) {
             // seems findStateValue may fail us in this case, so we explicitly
             // will attempt to obtain the values
