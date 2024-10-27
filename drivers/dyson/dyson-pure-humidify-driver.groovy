@@ -183,7 +183,7 @@ metadata {
 // second, I don't own any of those other devices and I don't have a reasonable way to
 // develop for it.
 def isSupportedCoolDevice(String device_type) {
-    return [DEVICE_TYPE_PURE_HUMIDIFY_COOL()].contains(device_type)
+    return [DEVICE_TYPE_PURE_HUMIDIFY_COOL(), DEVICE_TYPE_PURE_HUMIDIFY_COOL_FORMALDEHYDE()].contains(device_type)
 }
 def isSupportedHotCoolDevice(String device_type) {
     return false
@@ -246,6 +246,7 @@ private DEVICE_TYPE_PURE_COOL() {"438"}
 private DEVICE_TYPE_PURE_COOL_FORMALDEHYDE() {"438E"}
 private DEVICE_TYPE_PURE_COOL_DESK() {"520"}
 private DEVICE_TYPE_PURE_HUMIDIFY_COOL() {"358"}
+private DEVICE_TYPE_PURE_HUMIDIFY_COOL_FORMALDEHYDE() {"358K"}
 private DEVICE_TYPE_PURE_HOT_COOL_LINK() {"455"}
 private DEVICE_TYPE_PURE_HOT_COOL() {"527"}
 private DEVICE_TYPE_PURE_HOT_COOL_NEW() {"527E"}
@@ -267,6 +268,7 @@ private DEVICE_TYPE_NAMES()  {[
         "${DEVICE_TYPE_PURE_HOT_COOL_NEW()}": "Pure Hot+Cool (New)",
         "${DEVICE_TYPE_PURE_HOT_COOL_LINK()}": "Pure Hot+Cool Link",
         "${DEVICE_TYPE_PURE_HUMIDIFY_COOL()}": "Pure Humidify+Cool",
+        "${DEVICE_TYPE_PURE_HUMIDIFY_COOL_FORMALDEHYDE()}": "Pure Humidify+Cool Formaldehyde",
 ]}
 
 private static DYSON_PARAM_COOL_STATE_MAP()  {
