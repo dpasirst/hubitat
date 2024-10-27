@@ -41,7 +41,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.0.5'  }
+public static String version()      {  return '0.0.6'  }
 
 def static fanPowerMode() {["On":"ON","Off":"OFF"]}
 def static fanAutoMode() {["On":"ON","Off":"OFF"]}
