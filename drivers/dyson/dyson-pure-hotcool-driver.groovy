@@ -2,7 +2,7 @@
  *  Dyson Pure Cool Link/Pure Hot Cool Hubitat Driver - UNOFFICIAL (non-"link" version)
  *  Author: David Pasirstein
  *
- *  Copyright (c) 2023 David Pasirstein
+ *  Copyright (c) 2024 David Pasirstein
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -42,7 +42,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.0.6'  }
+public static String version()      {  return '0.0.7'  }
 
 def static fanPowerMode() {["On":"ON","Off":"OFF"]}
 def static fanAutoMode() {["On":"ON","Off":"OFF"]}
@@ -233,10 +233,11 @@ private DEVICE_TYPE_PURE_HUMIDIFY_COOL() {"358"}
 private DEVICE_TYPE_PURE_HOT_COOL_LINK() {"455"}
 private DEVICE_TYPE_PURE_HOT_COOL() {"527"}
 private DEVICE_TYPE_PURE_HOT_COOL_NEW() {"527E"}
+private DEVICE_TYPE_PURIFIER_BIG_QUIET() {"664"}
 
-//I read that for some units, the model in the WiFi SSID is does not match the model needed for MQTT.
+//I read that for some units, the model in the WiFi SSID does not match the model needed for MQTT.
 private static DEVICE_TYPE_MAP() {
-    ["455A":"455"]
+    ["455A":"455", "438K":"438", "527K":"527E", "358K":"358", "358E":"358"]
 }
 
 private DEVICE_TYPE_NAMES()  {[
@@ -251,6 +252,7 @@ private DEVICE_TYPE_NAMES()  {[
         "${DEVICE_TYPE_PURE_HOT_COOL_NEW()}": "Pure Hot+Cool (New)",
         "${DEVICE_TYPE_PURE_HOT_COOL_LINK()}": "Pure Hot+Cool Link",
         "${DEVICE_TYPE_PURE_HUMIDIFY_COOL()}": "Pure Humidify+Cool",
+        "${DEVICE_TYPE_PURIFIER_BIG_QUIET()}": "Purifier Big+Quiet Series",
 ]}
 
 private static DYSON_PARAM_COOL_STATE_MAP()  {
