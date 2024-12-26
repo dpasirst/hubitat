@@ -166,7 +166,8 @@ metadata {
 def isSupportedCoolDevice(String device_type) {
     return [DEVICE_TYPE_PURE_COOL(),
             DEVICE_TYPE_PURE_COOL_DESK(),
-            DEVICE_TYPE_PURE_COOL_FORMALDEHYDE()].contains(device_type)
+            DEVICE_TYPE_PURE_COOL_FORMALDEHYDE(),
+            DEVICE_TYPE_PURIFIER_BIG_QUIET()].contains(device_type)
 }
 def isSupportedHotCoolDevice(String device_type) {
     return [DEVICE_TYPE_PURE_HOT_COOL(),
