@@ -35,6 +35,8 @@
  *   https://community.home-assistant.io/t/dyson-pure-cool-link-local-mqtt-control/217263
  *  @shenex Xiaonan Shen
  *   https://github.com/shenxn/libdyson for ideas and know how
+ *  @libdyson-wg
+ *   https://github.com/libdyson-wg/ha-dyson for additional device definitions
  *
  */
 
@@ -42,7 +44,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.0.7'  }
+public static String version()      {  return '0.0.8'  }
 
 def static fanPowerMode() {["On":"ON","Off":"OFF"]}
 def static fanAutoMode() {["On":"ON","Off":"OFF"]}
@@ -171,7 +173,9 @@ def isSupportedCoolDevice(String device_type) {
 }
 def isSupportedHotCoolDevice(String device_type) {
     return [DEVICE_TYPE_PURE_HOT_COOL(),
-            DEVICE_TYPE_PURE_HOT_COOL_NEW()].contains(device_type)
+            DEVICE_TYPE_PURE_HOT_COOL_NEW(),
+            DEVICE_TYPE_PURIFIER_HOT_COOL_K(),
+            DEVICE_TYPE_PURIFIER_HOT_COOL_M()].contains(device_type)
 }
 
 def installed() {
@@ -232,8 +236,10 @@ private DEVICE_TYPE_PURE_COOL_FORMALDEHYDE() {"438E"}
 private DEVICE_TYPE_PURE_COOL_DESK() {"520"}
 private DEVICE_TYPE_PURE_HUMIDIFY_COOL() {"358"}
 private DEVICE_TYPE_PURE_HOT_COOL_LINK() {"455"}
-private DEVICE_TYPE_PURE_HOT_COOL() {"527"}
-private DEVICE_TYPE_PURE_HOT_COOL_NEW() {"527E"}
+private DEVICE_TYPE_PURE_HOT_COOL() {"527"}  // HP04
+private DEVICE_TYPE_PURE_HOT_COOL_NEW() {"527E"} // HP07 AND HP09
+private DEVICE_TYPE_PURIFIER_HOT_COOL_K() {"527K"}  // HP07 AND HP09
+private DEVICE_TYPE_PURIFIER_HOT_COOL_M() {"527M"}  // HP11 AND HP1
 private DEVICE_TYPE_PURIFIER_BIG_QUIET() {"664"}
 
 //I read that for some units, the model in the WiFi SSID does not match the model needed for MQTT.
@@ -251,6 +257,8 @@ private DEVICE_TYPE_NAMES()  {[
         "${DEVICE_TYPE_PURE_COOL_LINK_DESK()}": "Pure Cool Link Desk",
         "${DEVICE_TYPE_PURE_HOT_COOL()}": "Pure Hot+Cool",
         "${DEVICE_TYPE_PURE_HOT_COOL_NEW()}": "Pure Hot+Cool (New)",
+        "${DEVICE_TYPE_PURIFIER_HOT_COOL_K()}": "Purifier Hot+Cool K Series (HP07/HP09)",
+        "${DEVICE_TYPE_PURIFIER_HOT_COOL_M()}": "Purifier Hot+Cool M Series (HP11/HP1)",
         "${DEVICE_TYPE_PURE_HOT_COOL_LINK()}": "Pure Hot+Cool Link",
         "${DEVICE_TYPE_PURE_HUMIDIFY_COOL()}": "Pure Humidify+Cool",
         "${DEVICE_TYPE_PURIFIER_BIG_QUIET()}": "Purifier Big+Quiet Series",
