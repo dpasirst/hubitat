@@ -35,6 +35,8 @@
  *   https://community.home-assistant.io/t/dyson-pure-cool-link-local-mqtt-control/217263
  *  @shenex Xiaonan Shen
  *   https://github.com/shenxn/libdyson for ideas and know how
+ *  @dan-danache Dan Danache
+ *   https://codeberg.org/dan-danache/hubitat/ for logging ideas
  *
  */
  
@@ -136,6 +138,12 @@ metadata {
             input 'unitAddress', 'text', required: true, defaultValue: '', title: "Unit IP Address", description: "The Network IP Address of the unit on your home network"
             input 'pollInterval', 'enum', title: "Dyson Poll Interval", required: true, defaultValue: 'Manual Poll Only', options: ['Manual Poll Only','1 Minute','5 Minutes', '10 Minutes', '15 Minutes', '30 Minutes', '1 Hour', '3 Hours']
             input 'passwdType', 'enum', title: "Password Type", required: true, defaultValue: 'Password', options: ['Password','b64 Credential']
+            input(
+                name:'logLevel', type:'enum', title:'Log verbosity', required:true,
+                description:'Select what messages appear in the "Logs" section. If set to Debug, it will automatically change to Info after 30 minutes to avoid log flooding.',
+                options:['1':'Debug - log everything', '2':'Info - log important events', '3':'Warning - log events that require attention', '4':'Error - log errors'],
+                defaultValue:'1'
+            )
         }
     }
 }
@@ -157,12 +165,27 @@ def installed() {
 }
 
 void updated(){
+
+    // Clear out any scheduled jobs
+    unschedule()
+
+    // Setup logging
+    if (logLevel == null) {
+        logLevel = '1'
+        device.updateSetting 'logLevel', [value:logLevel, type:'enum']
+    }
+    // Auto disable debug logging after 30 minutes to avoid log flooding
+    if (logLevel == '1') runIn 1800, 'logsOff'
+    log_info "🛠️ Log verbosity = ${['1':'Debug', '2':'Info', '3':'Warning', '4':'Error'].get(logLevel)}"
+    
     initialize()
     disconnectFromUnit()
     connectToUnit()
     if (interfaces.mqtt.isConnected()) {
         requestStateUpdate()
     }
+
+    // Schedule the polling
     switch (pollInterval) {
         case '1 Minute'     : runEvery1Minute(runPoll);   break;
         case '5 Minutes'    : runEvery5Minutes(runPoll);  break;
@@ -312,21 +335,21 @@ void connectToUnit() {
         def hashedPass = isAlreadyHashedPassword() ? UNIT_PASSWD() : hashDevicePassword(UNIT_PASSWD() as String)
         (serial,device_type) = decodeSSID(UNIT_SSID() as String)
         if (serial == null || serial == "" || device_type == null || device_type == "") {
-            log.error("DYSON could not decode the provided WiFi SSID")
+            log_error("DYSON could not decode the provided WiFi SSID")
             return
         }
         if (!isSupported()) {
-            log.error("DYSON unsupported device, will not attempt to connect")
+            log_error("DYSON unsupported device, will not attempt to connect")
             return
         }
         if (state.clientId == null || state.clientId.toString().contains('-')) {
             state.clientId = UUID.randomUUID().toString().tokenize('-').last()
         }
-        log.debug("DYSON:init mqtt to: tcp://${UNIT_ADDRESS()}:1883 as client: ${state.clientId}")
+        log_debug("DYSON:init mqtt to: tcp://${UNIT_ADDRESS()}:1883 as client: ${state.clientId}")
         interfaces.mqtt.connect("tcp://${UNIT_ADDRESS()}:1883",state.clientId as String,serial,hashedPass)
-        log.debug("DYSON reporting isConnected=${interfaces.mqtt.isConnected()}")
+        log_debug("DYSON reporting isConnected=${interfaces.mqtt.isConnected()}")
         if (interfaces.mqtt.isConnected()) {
-            log.debug("DYSON Initiating Subscription: ${DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial)}")
+            log_debug("DYSON Initiating Subscription: ${DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial)}")
             interfaces.mqtt.subscribe(DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial))
         }
     }
@@ -339,13 +362,13 @@ void disconnectFromUnit() {
         def serial = ""
         def device_type = ""
         (serial,device_type) = decodeSSID(UNIT_SSID() as String)
-        log.info("DYSON MQTT Disconnect initiated")
-        log.debug("DYSON Initiating UnSubscribe: ${DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial)}")
+        log_info("DYSON MQTT Disconnect initiated")
+        log_debug("DYSON Initiating UnSubscribe: ${DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial)}")
         interfaces.mqtt.unsubscribe(DYSON_MQTT_SUBSRIPTION_TOPIC(device_type,serial))
         try { interfaces.mqtt.disconnect() } catch (e) {}
-        log.debug("DYSON Disconnected")
+        log_debug("DYSON Disconnected")
     } else {
-        log.debug("DYSON Disconnect From Unit Command: Already Disconnected")
+        log_debug("DYSON Disconnect From Unit Command: Already Disconnected")
     }
 }
 
@@ -366,13 +389,13 @@ def hashDevicePassword(String devicePassword) {
  */
 def isSupported() {
     if (isSupportedCoolDevice(state.device_type as String)) {
-        log.info("Dyson device is supported Cool")
+        log_info("Dyson device is supported Cool")
         state.canHeat = 0
     } else if (isSupportedHotCoolDevice(state.device_type as String)) {
-        log.info("Dyson device is supported Hot+Cool")
+        log_info("Dyson device is supported Hot+Cool")
         state.canHeat = 1
     } else {
-        log.error("Device is NOT SUPPORTED by this driver")
+        log_error("Device is NOT SUPPORTED by this driver")
         return false
     }
     return true
@@ -391,17 +414,17 @@ def decodeSSID(String ssid) {
         if ((match = ssid =~ /^DYSON-([0-9A-Z]{3}-[A-Z]{2}-[0-9A-Z]{8})-([0-9]{3}[A-Z]?)$/ )) {
             serial = match.group(1)
             device_type = DEVICE_TYPE_MAP().getOrDefault((String)match.group(2),(String)match.group(2))
-            log.info("Dyson is believed to be: ${DEVICE_TYPE_NAMES().getOrDefault("${device_type}",device_type)}")
-            log.debug("Dyson Determined serial:${serial} topic model:${device_type}")
+            log_info("Dyson is believed to be: ${DEVICE_TYPE_NAMES().getOrDefault("${device_type}",device_type)}")
+            log_debug("Dyson Determined serial:${serial} topic model:${device_type}")
             state.device_type = device_type
             state.device_name = DEVICE_TYPE_NAMES().getOrDefault("${device_type}",device_type)
             state.device_serial = serial
             return [serial,device_type]
         } else {
-            log.error("DYSON WiFi SSID could not be parsed (format?, typo?) which is required to connect to device")
+            log_error("DYSON WiFi SSID could not be parsed (format?, typo?) which is required to connect to device")
         }
     } catch(e) {
-        log.error("DYSON WiFi SSID could not be parsed (format?, typo?) which is required to connect to device",e)
+        log_error("DYSON WiFi SSID could not be parsed (format?, typo?) which is required to connect to device",e)
     }
     return [null,null]
 }
@@ -412,9 +435,9 @@ def decodeSSID(String ssid) {
  * @return nothing
  */
 def parse(String message) {
-    //log.debug("Received Dyson message: $message")
+    log_debug("Received Dyson message: $message")
     def mqttMessage = interfaces.mqtt.parseMessage(message)
-    //log.debug("Dyson MQTT Message has ${mqttMessage.size()} elements: mqttMessage")
+    log_debug("Dyson MQTT Message has ${mqttMessage.size()} elements: mqttMessage")
     def payload = (new JsonSlurper().parseText(mqttMessage.get("payload") as String)) as Map
     processMessage(payload)
 }
@@ -429,21 +452,21 @@ def processMessage(Map dysonJSON) {
     if (dysonJSON?.msg == null) { return }
     sendEvent(name: 'dyson_dyson_mqtt_rcv', value: mqttDate())
     if (dysonJSON.msg == DYSON_MQTT_MSG_CURRENT_STATE()) {
-        log.debug("DYSON Received a current state message")
+        log_debug("DYSON Received a current state message")
         def rssi = dysonJSON.getOrDefault("rssi","1").toString().toInteger()
         if (rssi < 0) { sendEvent(name: "rssi", value: rssi) }
         def productState = dysonJSON.getOrDefault("product-state",null) as Map
         processMessageState(productState,false)
     } else if(dysonJSON.msg == DYSON_MQTT_MSG_ENVIRONMENTAL_CURRENT()) {
-        log.debug("DYSON Received an environmental message")
+        log_debug("DYSON Received an environmental message")
         def data = dysonJSON.getOrDefault("data",null) as Map
         processMessageEnvironmental(data)
     } else if (dysonJSON.msg == DYSON_MQTT_MSG_STATE_CHANGE()) {
-        log.debug("DYSON Received a state changed message")
+        log_debug("DYSON Received a state changed message")
         def productState = dysonJSON.getOrDefault("product-state",null) as Map
         processMessageState(productState,true)
     } else {
-        log.debug("DYSON Received a msg type that we don't handle: ${dysonJSON.msg} -- ${dysonJSON}")
+        log_debug("DYSON Received a msg type that we don't handle: ${dysonJSON.msg} -- ${dysonJSON}")
     }
 }
 
@@ -557,16 +580,16 @@ def processMessageEnvironmental(Map data) {
  */
 def mqttClientStatus(String message) {
     if (message.startsWith("Error")) {
-        log.error("DYSON MQTT: ${message}")
+        log_error("DYSON MQTT: ${message}")
         if (!interfaces.mqtt.isConnected()) {
-            log.debug("DYSON Uh...looks like we lost our MQTT connection")
+            log_debug("DYSON Uh...looks like we lost our MQTT connection")
         }
     } else if (message.startsWith("Status")) {
-        log.info("DYSON MQTT: ${message}")
+        log_info("DYSON MQTT: ${message}")
     } else {
-        log.error("DYSON Unexpected status message: ${message}")
+        log_error("DYSON Unexpected status message: ${message}")
         if (!interfaces.mqtt.isConnected()) {
-            log.debug("DYSON Uh...looks like we lost our MQTT connection")
+            log_debug("DYSON Uh...looks like we lost our MQTT connection")
         }
     }
 }
@@ -585,7 +608,7 @@ def requestStateUpdate() {
     if (interfaces.mqtt.isConnected()) {
         pollState()
     } else {
-        log.error("DYSON Manual request for state update is not possible because MQTT is not connected")
+        log_error("DYSON Manual request for state update is not possible because MQTT is not connected")
     }
 }
 
@@ -607,7 +630,7 @@ def mqttConnectAndPublish(String destinationTopic,String payload) {
         interfaces.mqtt.publish(destinationTopic,payload)
         retval = true
     } else {
-        log.error("DYSON event cannot be published because device is not connected")
+        log_error("DYSON event cannot be published because device is not connected")
     }
     return retval
 }
@@ -637,7 +660,7 @@ def setConfiguration(Map configParams) {
                                                      "time":mqttDate(),
                                                      "mode-reason": "LAPP",
                                                      "data":configParams])
-        //log.debug("DYSON Sending:${message}")
+        //log_debug("DYSON Sending:${message}")
         mqttConnectAndPublish(DYSON_MQTT_PUBLISH_TOPIC((String)state.device_type, (String)state.device_serial),
                                 message)
     }
@@ -648,7 +671,7 @@ def setFanSpeed(speed) {
     def newSpeed = fanSpeedMap().getOrDefault(speed,"AUTO")
     if (newSpeed != "AUTO") {
         def config = [(DYSON_PARAM_COOL_STATE_MAP().fanSpeed): newSpeed]
-        log.info("DYSON Set Fan Speed: ${config}")
+        log_info("DYSON Set Fan Speed: ${config}")
         setConfiguration(config)
     } else {
         //a little bit of trickery here because AUTO is not a speed but a mode.
@@ -659,21 +682,21 @@ def setFanSpeed(speed) {
 def setFanMode(mode) {
     def newMode = fanModeMap().getOrDefault(mode,"OFF")
     def config = [(DYSON_PARAM_COOL_STATE_MAP().fanMode): newMode]
-    log.info("DYSON Set Fan Mode: ${config}")
+    log_info("DYSON Set Fan Mode: ${config}")
     setConfiguration(config)
 }
 //command
 def setNightMode(mode) {
     def newMode = nightModeMap().getOrDefault(mode,"OFF")
     def config = [(DYSON_PARAM_COOL_STATE_MAP().nightMode): newMode]
-    log.info("DYSON Set Night Mode: ${config}")
+    log_info("DYSON Set Night Mode: ${config}")
     setConfiguration(config)
 }
 //command
 def setOscillationMode(mode) {
     def newMode = oscillationMap().getOrDefault(mode,"OFF")
     def config = [(DYSON_PARAM_COOL_STATE_MAP().oscillation): newMode]
-    log.info("DYSON Set Oscillation Mode: ${config}")
+    log_info("DYSON Set Oscillation Mode: ${config}")
     setConfiguration(config)
 }
 //command
@@ -681,10 +704,10 @@ def setHeatMode(mode) {
     if (state.canHeat) {
         def newMode = heatModeMap().getOrDefault(mode, "OFF")
         def config = [(DYSON_PARAM_HOT_COOL_STATE_MAP().heatMode): newMode]
-        log.info("DYSON Set Heat Mode: ${config}")
+        log_info("DYSON Set Heat Mode: ${config}")
         setConfiguration(config)
     } else {
-        log.info("DYSON Set Heat Mode is not possible with this device")
+        log_info("DYSON Set Heat Mode is not possible with this device")
     }
 }
 //command
@@ -692,17 +715,17 @@ def setFocusMode(mode) {
     if (state.canHeat) {
         def newMode = focusModeMap().getOrDefault(mode, "OFF")
         def config = [(DYSON_PARAM_HOT_COOL_STATE_MAP().focusMode): newMode]
-        log.info("DYSON Set Focus Mode: ${config}")
+        log_info("DYSON Set Focus Mode: ${config}")
         setConfiguration(config)
     } else {
-        log.info("DYSON Set Focus Mode is not possible with this device")
+        log_info("DYSON Set Focus Mode is not possible with this device")
     }
 }
 //command
 def resetFilter(mode) {
     def newMode = resetFilterMap().getOrDefault(mode, "STET")
     def config = ["rstf": newMode]
-    log.info("DYSON Reset Filter Mode: ${config}")
+    log_info("DYSON Reset Filter Mode: ${config}")
     setConfiguration(config)
 }
 
@@ -749,7 +772,7 @@ static def kelvinToCelsius(temperature) {
  */
 def setSpeed(fanspeed) {
     def newVal = FanControlSpeedMapping().getOrDefault(fanspeed,FanControlSpeedMapping().off)
-    log.debug("DYSON FanControl setSpeed:${fanspeed} (mapped:${newVal})")
+    log_debug("DYSON FanControl setSpeed:${fanspeed} (mapped:${newVal})")
     if ([FanControlSpeedMapping().off,FanControlSpeedMapping().on,FanControlSpeedMapping().auto].contains(newVal)) {
         setFanMode(newVal)
     } else {
@@ -771,7 +794,7 @@ def cycleSpeed() {
     curSpeed = curSpeed + 1
     //speed can only be 1..10
     if (curSpeed > 10) { curSpeed = 1 }
-    log.debug("DYSON FanControl cycleSpeed was: ${curSpeedStr} to: ${curSpeed}")
+    log_debug("DYSON FanControl cycleSpeed was: ${curSpeedStr} to: ${curSpeed}")
     setFanSpeed(curSpeed.toString())
 }
 
@@ -847,7 +870,7 @@ def off() {
  * @return nothing
  */
 def setCoolingSetpoint(temperature) {
-    log.error("DYSON Cooling Setpoint is not supported")
+    log_error("DYSON Cooling Setpoint is not supported")
 }
 /**
  * Hubitat capability "Thermostat" and "ThermostatHeatingSetpoint" has setHeatingSetpoint(temperature)
@@ -864,10 +887,10 @@ def setHeatingSetpoint(temperature) {
                 heatTargetFromCelsius(temperature.toString().toBigDecimal())
         def config = [(DYSON_PARAM_HOT_COOL_STATE_MAP().heatMode) : heatModeMap().Heat,
                       (DYSON_PARAM_HOT_COOL_STATE_MAP().heatTempTarget): kelvinStr]
-        log.info("DYSON Heat Target: ${config}")
+        log_info("DYSON Heat Target: ${config}")
         setConfiguration(config)
     } else {
-        log.info("DYSON Heat Target is not possible with this device")
+        log_info("DYSON Heat Target is not possible with this device")
     }
 }
 
@@ -936,6 +959,33 @@ def is_heating_device(json_payload) {
     return support_heating(json_payload['ProductType'])
 }
 
+// ===================================================================================================================
+// Capabilities helpers
+// ===================================================================================================================
+
+// Handler method for scheduled job to disable debug logging
+void logsOff() {
+    log_info '⏲️ Automatically reverting log level to "Info"'
+    device.updateSetting 'logLevel', [value:'2', type:'enum']
+}
+
+// ===================================================================================================================
+// Logging helpers (something like this should be part of the SDK and not implemented by each driver)
+// ===================================================================================================================
+
+private void log_debug(String message) {
+    if (logLevel == '1') log.debug "${device.displayName} ${message.uncapitalize()}"
+}
+private void log_info(String message) {
+    if (logLevel <= '2') log.info "${device.displayName} ${message.uncapitalize()}"
+}
+private void log_warn(String message) {
+    if (logLevel <= '3') log.warn "${device.displayName} ${message.uncapitalize()}"
+}
+private void log_error(String message) {
+    log_error "${device.displayName} ${message.uncapitalize()}"
+}
+
 /*
 This is commented out because dyson now uses a two factor approach for authenticating to it's servers
 and retrieving devices.  Thus, the implementation below, no longer works.  It looks possible to
@@ -959,7 +1009,7 @@ def refreshDeviceList() {
 
 void loginDysonOnline() {
     if( email== null || password== null || countryCode == null ) {
-        log.warn 'Dyson Driver - WARNING: Dyson email/password/country not found.  Please configure in preferences.'
+        log_warn 'Dyson Driver - WARNING: Dyson email/password/country not found.  Please configure in preferences.'
         return;
     }
 
@@ -970,17 +1020,17 @@ void loginDysonOnline() {
             contentType: "application/json",
             body: [ 'Email' : email, 'Password' : password ]
     ]
-    //log.debug('Auth dyson: ' + ParamsGN.uri)
+    //log_debug('Auth dyson: ' + ParamsGN.uri)
     asynchttpPost('dysonLoginHandler', ParamsGN)
     return;
 }
 
 void dysonLoginHandler(resp, data) {
-    log.debug('Login Dyson online resp')
+    log_debug('Login Dyson online resp')
 
     if(resp.getStatus() < 200 || resp.getStatus() >= 300) {
-        log.warn 'Calling ' + "auth"//atomicState.gn_base_uri
-        log.warn resp.getStatus() + ':' + resp.getErrorMessage()
+        log_warn 'Calling ' + "auth"//atomicState.gn_base_uri
+        log_warn resp.getStatus() + ':' + resp.getErrorMessage()
     } else {
         def now = new Date();
         sendEvent(name: 'current_dyson_lastauth', value: now.getTime());
@@ -988,10 +1038,10 @@ void dysonLoginHandler(resp, data) {
         def respAccount = json?.Account
         def respPass = json?.Password
         if (respAccount != null && respPass != null) {
-            log.debug("Login Dyson online successful Account:${respAccount}, retrieving devices")
+            log_debug("Login Dyson online successful Account:${respAccount}, retrieving devices")
             dysonRetrieveDevices(respAccount,respPass)
         } else {
-            log.error("Login Dyson online unsuccessful Account:${respAccount}")
+            log_error("Login Dyson online unsuccessful Account:${respAccount}")
         }
     }
 }
@@ -1009,25 +1059,25 @@ void dysonRetrieveDevices(String account, String pass) {
     ]
     try {
         httpGet(ParamsGN) { resp ->
-            //log.debug('Task Dyson device list resp')
+            //log_debug('Task Dyson device list resp')
 
             if(resp.getStatus() < 200 || resp.getStatus() >= 300) {
-                log.warn 'Retrieving devices task failed'
-                log.warn resp.getStatus() + ':' + resp.getErrorMessage()
+                log_warn 'Retrieving devices task failed'
+                log_warn resp.getStatus() + ':' + resp.getErrorMessage()
             } else {
-                //log.warn "Tasks: " + resp.data
+                //log_warn "Tasks: " + resp.data
                 //result = parseJson(resp.data) -- this is already parsed
-                log.debug("Retrieved ${resp.data?.length} devices")
+                log_debug("Retrieved ${resp.data?.length} devices")
                 def dyson_device_list = new ArrayList()
                 if (resp.data != null) {
                     for (device in resp.data) {
                         if (is_360_eye_device(device)) {
-                            Log.error("Dyson Device is 360_eye UNSUPPORTED: ${device}")
+                            log_error("Dyson Device is 360_eye UNSUPPORTED: ${device}")
                         } else if (is_heating_device(device)) {
-                            Log.info("Found Dyson Pure Hot Cool Link: ${device}")
+                            log_info("Found Dyson Pure Hot Cool Link: ${device}")
                             dyson_device_list.add(device)
                         } else {
-                            Log.error("Dyson Device is UNSUPPORTED (regular Cool Link?): ${device}")
+                            log_error("Dyson Device is UNSUPPORTED (regular Cool Link?): ${device}")
                         }
                     }
                     if (dyson_device.size() > 0) {
@@ -1037,7 +1087,7 @@ void dysonRetrieveDevices(String account, String pass) {
             }
         }
     } catch (Exception e) {
-        log.warn "Call to on failed: ${e.message}"
+        log_warn "Call to on failed: ${e.message}"
     }
     return
 }
