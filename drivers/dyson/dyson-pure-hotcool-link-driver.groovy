@@ -44,7 +44,7 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-public static String version()      {  return '0.1.3'  }
+public static String version()      {  return '0.1.4'  }
 
 def static fanModeMap() {["Off":"OFF","Fan":"FAN","Auto":"AUTO"]}
 def static fanSpeedMap() {["1":"0001","2":"0002","3":"0003","4":"0004","5":"0005","6":"0006",
